@@ -1,0 +1,63 @@
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import pool from './config/database.js';
+import authRoutes from './routes/auth.js';
+import userRoutes from './routes/users.js';
+import orderRoutes from './routes/orders.js';
+import customerRoutes from './routes/customers.js';
+import { errorHandler } from './middleware/errorHandler.js';
+
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Middleware
+app.use(helmet());
+app.use(cors({
+  origin: process.env.CORS_ORIGIN?.split(',') || 'http://localhost:3000'
+}));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Routes
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/customers', customerRoutes);
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'API is running', timestamp: new Date() });
+});
+
+// 404 Handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Route not found' });
+});
+
+// Error Handler
+app.use(errorHandler);
+
+// Start Server
+app.listen(PORT, async () => {
+  try {
+    // Test database connection
+    const result = await pool.query('SELECT NOW()');
+    console.log('✅ Database connected:', result.rows[0]);
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+    console.log(`📊 Swagger docs at http://localhost:${PORT}/api-docs`);
+  } catch (err) {
+    console.error('❌ Database connection failed:', err);
+    process.exit(1);
+  }
+});
+
+export default app;

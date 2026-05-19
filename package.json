@@ -1,0 +1,33 @@
+{
+  "name": "damacana-backend-api",
+  "version": "1.0.0",
+  "description": "Damacana Water Delivery Admin API",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch server.js",
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "damacana",
+    "water",
+    "delivery"
+  ],
+  "author": "",
+  "license": "MIT",
+ "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.3.1",
+    "pg": "^8.11.3",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "cors": "^2.8.5",
+    "swagger-ui-express": "^4.6.3",
+    "helmet": "^7.1.0",
+    "express-validator": "^7.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
