@@ -11,7 +11,7 @@
 | **Backend API** | Node.js + Express + PostgreSQL — tüm iş mantığı | `api.suman.khamsacraft.az` |
 | **Owner paneli** | Şirket oluşturma, lisans kodu, kullanıcı yönetimi | `suman.khamsacraft.az` |
 | **Admin paneli** | Müşteri, sipariş, tarihçe, Excel | `admin.suman.khamsacraft.az` |
-| **Kurye paneli** | Sipariş teslimi, ödeme, bildirim (ileride APK) | `kuryer.suman.khamsacraft.az` |
+| **Kurye paneli** | Sipariş teslimi, ödeme, bildirim (ileride APK) | `courier.suman.khamsacraft.az` |
 
 - **4 ayrı frontend deploy** + **1 API** + **1 PostgreSQL veritabanı**
 - Giriş: Admin ve kurye **lisans kodu** ile; owner lisans kodu kullanmaz
