@@ -9,6 +9,10 @@ import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import orderRoutes from './routes/orders.js';
 import customerRoutes from './routes/customers.js';
+import courierRoutes from './routes/couriers.js';
+import historyRoutes from './routes/history.js';
+import notificationRoutes from './routes/notifications.js';
+import ownerRoutes from './routes/owner.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 dotenv.config();
@@ -17,7 +21,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 // Middleware
 app.use(helmet());
@@ -32,6 +36,10 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/customers', customerRoutes);
+app.use('/api/couriers', courierRoutes);
+app.use('/api/history', historyRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/owner', ownerRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

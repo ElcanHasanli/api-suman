@@ -2,22 +2,45 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
+import { getCompanyByLicense, validateCompanyAccess } from '../utils/company.js';
 
 const router = express.Router();
 
-// Login
+async function buildAuthResponse(user, company = null) {
+  const payload = {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    company_id: user.company_id ?? null,
+  };
+
+  const token = jwt.sign(payload, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRE,
+  });
+
+  return {
+    message: 'Login successful',
+    token,
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      company_id: user.company_id ?? null,
+      company_name: company?.name ?? null,
+    },
+  };
+}
+
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, license_code } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password required' });
     }
 
-    const result = await pool.query(
-      'SELECT * FROM users WHERE email = $1',
-      [email]
-    );
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
 
     if (result.rows.length === 0) {
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -30,53 +53,41 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRE }
-    );
+    if (user.status === 'inactive') {
+      return res.status(403).json({ error: 'Hesab deaktiv edilib' });
+    }
 
-    res.json({
-      message: 'Login successful',
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role
-      }
-    });
+    let company = null;
+
+    if (user.role === 'owner') {
+      return res.json(await buildAuthResponse(user));
+    }
+
+    if (!license_code) {
+      return res.status(400).json({ error: 'Lisenziya kodu tələb olunur' });
+    }
+
+    company = await getCompanyByLicense(license_code);
+    const access = validateCompanyAccess(company);
+    if (!access.ok) {
+      return res.status(access.status).json({ error: access.error });
+    }
+
+    if (Number(user.company_id) !== Number(company.id)) {
+      return res.status(403).json({ error: 'Bu hesab bu lisenziya koduna aid deyil' });
+    }
+
+    res.json(await buildAuthResponse(user, company));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Register
+/** Yalnız owner — public register bağlanıb. */
 router.post('/register', async (req, res) => {
-  try {
-    const { email, password, name, role } = req.body;
-
-    if (!email || !password || !name) {
-      return res.status(400).json({ error: 'Email, password, and name required' });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const result = await pool.query(
-      'INSERT INTO users (email, password_hash, name, role) VALUES ($1, $2, $3, $4) RETURNING id, email, name, role',
-      [email, hashedPassword, name, role || 'user']
-    );
-
-    res.status(201).json({
-      message: 'User created successfully',
-      user: result.rows[0]
-    });
-  } catch (err) {
-    if (err.code === '23505') {
-      return res.status(400).json({ error: 'Email already exists' });
-    }
-    res.status(500).json({ error: err.message });
-  }
+  res.status(403).json({
+    error: 'Qeydiyyat bağlanıb. Şirkət admini owner tərəfindən yaradılır.',
+  });
 });
 
 export default router;
