@@ -23,15 +23,31 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5001;
 
-// Middleware
-app.use(helmet());
-const corsOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim()).filter(Boolean)
-  : ['http://localhost:3000', 'http://localhost:5173'];
+// Middleware — CORS əvvəl (preflight üçün)
+const BUILTIN_ORIGINS = [
+  'https://suman.khamsacraft.az',
+  'https://admin.suman.khamsacraft.az',
+  'https://courier.suman.khamsacraft.az',
+  'http://localhost:3000',
+  'http://localhost:5173',
+];
+
+const corsOrigins = [
+  ...new Set([
+    ...BUILTIN_ORIGINS,
+    ...(process.env.CORS_ORIGIN?.split(',').map((o) => o.trim()).filter(Boolean) ?? []),
+  ]),
+];
 
 app.use(cors({
   origin: corsOrigins,
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -66,6 +82,7 @@ app.listen(PORT, async () => {
     const result = await pool.query('SELECT NOW()');
     console.log('✅ Database connected:', result.rows[0]);
     console.log(`🚀 Server running on http://localhost:${PORT}`);
+    console.log('🌐 CORS origins:', corsOrigins.join(', '));
     console.log(`📊 Swagger docs at http://localhost:${PORT}/api-docs`);
   } catch (err) {
     console.error('❌ Database connection failed:', err);
