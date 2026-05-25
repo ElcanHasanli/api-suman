@@ -13,6 +13,7 @@
     "db:migrate": "node migrate-order-payment.js",
     "db:migrate:phone": "node migrate-unique-customer-phone.js",
     "db:migrate:tenant": "node migrate-multi-tenant.js",
+    "db:migrate:v2": "node migrate-features-v2.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

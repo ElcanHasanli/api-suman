@@ -62,13 +62,54 @@ async function resetDatabase() {
         name VARCHAR(255) NOT NULL,
         surname VARCHAR(255),
         phone VARCHAR(20) NOT NULL,
+        phone_normalized VARCHAR(20) NOT NULL,
+        phone2 VARCHAR(20),
+        phone2_normalized VARCHAR(20),
         address TEXT NOT NULL,
         price DECIMAL(10, 2) DEFAULT 0,
         active_bidons INT DEFAULT 0,
         debt DECIMAL(10, 2) DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE (company_id, phone)
+        UNIQUE (company_id, phone_normalized)
+      );
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS expenses (
+        id SERIAL PRIMARY KEY,
+        company_id INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+        courier_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        amount DECIMAL(10, 2) NOT NULL,
+        description VARCHAR(255) NOT NULL,
+        category VARCHAR(100),
+        created_by INT NOT NULL REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS order_notes (
+        id SERIAL PRIMARY KEY,
+        company_id INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+        order_id INT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        user_id INT NOT NULL REFERENCES users(id),
+        author_role VARCHAR(50) NOT NULL,
+        body TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS debt_payments (
+        id SERIAL PRIMARY KEY,
+        company_id INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+        customer_id INT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+        amount DECIMAL(10, 2) NOT NULL,
+        previous_debt DECIMAL(10, 2) NOT NULL,
+        new_debt DECIMAL(10, 2) NOT NULL,
+        recorded_by INT NOT NULL REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
 

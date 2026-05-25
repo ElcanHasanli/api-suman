@@ -12,5 +12,13 @@ export function normalizePhone(phone) {
   return digits;
 }
 
+/** Inputda yazılanı saxlayır, unikal yoxlama üçün normalized qaytarır. */
+export function parsePhoneFields(phone) {
+  const display = String(phone ?? '').trim();
+  const normalized = normalizePhone(display);
+  if (!normalized) return null;
+  return { display, normalized };
+}
+
 export const DUPLICATE_PHONE_ERROR =
   'Bu telefon nömrəsi artıq başqa müştəriyə aid edilib';

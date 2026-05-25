@@ -2,8 +2,8 @@ import express from 'express';
 import pool from '../config/database.js';
 import { authenticateToken, authorizeRole, requireTenant } from '../middleware/auth.js';
 import { buildCompletedOrdersFilter, COMPLETED_ORDER_SELECT } from '../utils/historyQuery.js';
+import { buildDateFilter } from '../utils/periodFilter.js';
 import { buildExcelBuffer, sendExcel } from '../utils/excel.js';
-
 const router = express.Router();
 
 router.use(authenticateToken, requireTenant, authorizeRole(['admin']));
@@ -11,12 +11,16 @@ router.use(authenticateToken, requireTenant, authorizeRole(['admin']));
 function summarizeOrders(rows) {
   const summary = {
     totalOrders: rows.length,
-    totalRevenue: 0,
     cashRevenue: 0,
     cardRevenue: 0,
     creditRevenue: 0,
     unpaidCreditOrders: 0,
     unpaidCreditAmount: 0,
+    orderRevenue: 0,
+    debtCollected: 0,
+    totalRevenue: 0,
+    totalExpenses: 0,
+    netRevenue: 0,
   };
 
   for (const row of rows) {
@@ -37,26 +41,13 @@ function summarizeOrders(rows) {
     }
   }
 
-  summary.totalRevenue =
+  summary.orderRevenue =
     summary.cashRevenue + summary.cardRevenue + summary.creditRevenue;
 
   return summary;
 }
 
-const historyColumns = [
-  { header: 'ID', key: 'id', width: 8 },
-  { header: 'Müştəri', key: 'customer', width: 22 },
-  { header: 'Telefon', key: 'phone', width: 14 },
-  { header: 'Ünvan', key: 'address', width: 28 },
-  { header: 'Qiymət', key: 'price', width: 10 },
-  { header: 'Ödəniş', key: 'payment_type', width: 12 },
-  { header: 'Ödənilib', key: 'is_paid', width: 10 },
-  { header: 'Ödəniş tarixi', key: 'paid_at', width: 20 },
-  { header: 'Kuryer', key: 'courier_name', width: 16 },
-  { header: 'Tamamlanma', key: 'completed_at', width: 20 },
-];
-
-async function fetchHistory(period, startDate, endDate, companyId) {
+async function fetchHistoryOrders(period, startDate, endDate, companyId) {
   const { clause, params } = buildCompletedOrdersFilter(
     period,
     startDate,
@@ -68,22 +59,78 @@ async function fetchHistory(period, startDate, endDate, companyId) {
   return result.rows;
 }
 
+async function fetchExpenses(period, startDate, endDate, companyId) {
+  let query = `
+    SELECT e.*, u.name AS courier_name
+    FROM expenses e
+    JOIN users u ON e.courier_id = u.id
+    WHERE e.company_id = $1`;
+  const params = [companyId];
+  const df = buildDateFilter('e.created_at', period, startDate, endDate, params);
+  query += df.clause + ' ORDER BY e.created_at DESC';
+  const result = await pool.query(query, df.params);
+  return result.rows;
+}
+
+async function fetchDebtPayments(period, startDate, endDate, companyId) {
+  let query = `
+    SELECT dp.*, c.name AS customer_name, c.surname AS customer_surname,
+           u.name AS recorded_by_name
+    FROM debt_payments dp
+    JOIN customers c ON dp.customer_id = c.id
+    JOIN users u ON dp.recorded_by = u.id
+    WHERE dp.company_id = $1`;
+  const params = [companyId];
+  const df = buildDateFilter('dp.created_at', period, startDate, endDate, params);
+  query += df.clause + ' ORDER BY dp.created_at DESC';
+  const result = await pool.query(query, df.params);
+  return result.rows;
+}
+
+function buildFullSummary(orderSummary, expenses, debtPayments) {
+  const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
+  const debtCollected = debtPayments.reduce((s, d) => s + Number(d.amount), 0);
+
+  orderSummary.debtCollected = debtCollected;
+  orderSummary.totalRevenue = orderSummary.orderRevenue + debtCollected;
+  orderSummary.totalExpenses = totalExpenses;
+  orderSummary.netRevenue = orderSummary.totalRevenue - totalExpenses;
+
+  return orderSummary;
+}
+
+const historyColumns = [
+  { header: 'ID', key: 'id', width: 8 },
+  { header: 'Müştəri', key: 'customer', width: 22 },
+  { header: 'Telefon', key: 'phone', width: 14 },
+  { header: 'Ünvan', key: 'address', width: 28 },
+  { header: 'Qiymət', key: 'price', width: 10 },
+  { header: 'Ödəniş', key: 'payment_type', width: 12 },
+  { header: 'Kuryer', key: 'courier_name', width: 16 },
+  { header: 'Tamamlanma', key: 'completed_at', width: 20 },
+];
+
 router.get('/', async (req, res) => {
   try {
     const { period = 'today', startDate, endDate } = req.query;
-    const orders = await fetchHistory(
-      period,
-      startDate,
-      endDate,
-      req.user.company_id
-    );
+    const companyId = req.user.company_id;
+
+    const [orders, expenses, debtPayments] = await Promise.all([
+      fetchHistoryOrders(period, startDate, endDate, companyId),
+      fetchExpenses(period, startDate, endDate, companyId),
+      fetchDebtPayments(period, startDate, endDate, companyId),
+    ]);
+
+    const summary = buildFullSummary(summarizeOrders(orders), expenses, debtPayments);
 
     res.json({
       period,
       startDate: startDate ?? null,
       endDate: endDate ?? null,
-      summary: summarizeOrders(orders),
+      summary,
       orders,
+      expenses,
+      debtPayments,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -93,7 +140,7 @@ router.get('/', async (req, res) => {
 router.get('/export', async (req, res) => {
   try {
     const { period = 'today', startDate, endDate } = req.query;
-    const orders = await fetchHistory(
+    const orders = await fetchHistoryOrders(
       period,
       startDate,
       endDate,
@@ -107,8 +154,6 @@ router.get('/export', async (req, res) => {
       address: o.address,
       price: o.price,
       payment_type: o.payment_type,
-      is_paid: o.is_paid,
-      paid_at: o.paid_at,
       courier_name: o.courier_name,
       completed_at: o.completed_at,
     }));

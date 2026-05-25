@@ -166,6 +166,63 @@ router.get('/courier/:courierId/export', authorizeCourierSelf('courierId'), asyn
   }
 });
 
+async function getOrderNotes(orderId, companyId) {
+  const result = await pool.query(
+    `SELECT n.*, u.name AS author_name
+     FROM order_notes n
+     JOIN users u ON n.user_id = u.id
+     WHERE n.order_id = $1 AND n.company_id = $2
+     ORDER BY n.created_at ASC`,
+    [orderId, companyId]
+  );
+  return result.rows;
+}
+
+router.get('/:id/notes', async (req, res) => {
+  try {
+    const order = await getOrderById(req.params.id, req.user.company_id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!assertCourierOrderAccess(req, order)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+    const notes = await getOrderNotes(req.params.id, req.user.company_id);
+    res.json(notes);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/notes', authorizeRole(['admin', 'courier']), async (req, res) => {
+  try {
+    const order = await getOrderById(req.params.id, req.user.company_id);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+    if (!assertCourierOrderAccess(req, order)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+
+    const { body: noteBody } = req.body;
+    if (!noteBody || !String(noteBody).trim()) {
+      return res.status(400).json({ error: 'Note body required' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO order_notes (company_id, order_id, user_id, author_role, body)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [
+        req.user.company_id,
+        req.params.id,
+        req.user.id,
+        req.user.role,
+        String(noteBody).trim(),
+      ]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   try {
     const order = await getOrderById(req.params.id, req.user.company_id);
@@ -173,7 +230,8 @@ router.get('/:id', async (req, res) => {
     if (!assertCourierOrderAccess(req, order)) {
       return res.status(403).json({ error: 'Insufficient permissions' });
     }
-    res.json(order);
+    const notes = await getOrderNotes(req.params.id, req.user.company_id);
+    res.json({ ...order, notes });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

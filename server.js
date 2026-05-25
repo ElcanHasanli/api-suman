@@ -13,6 +13,7 @@ import courierRoutes from './routes/couriers.js';
 import historyRoutes from './routes/history.js';
 import notificationRoutes from './routes/notifications.js';
 import ownerRoutes from './routes/owner.js';
+import expenseRoutes from './routes/expenses.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 dotenv.config();
@@ -61,6 +62,7 @@ app.use('/api/couriers', courierRoutes);
 app.use('/api/history', historyRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/owner', ownerRoutes);
+app.use('/api/expenses', expenseRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
