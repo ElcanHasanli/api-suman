@@ -143,12 +143,3 @@ export async function markOrderAsPaid(orderId) {
   }
 }
 
-export async function notifyCourierAssignment(courierId, orderId, message) {
-  if (!courierId) return;
-
-  await pool.query(
-    `INSERT INTO notifications (user_id, order_id, type, message)
-     VALUES ($1, $2, 'order_assigned', $3)`,
-    [courierId, orderId, message]
-  );
-}

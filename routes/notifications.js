@@ -1,6 +1,6 @@
 import express from 'express';
 import pool from '../config/database.js';
-import { authenticateToken, requireTenant } from '../middleware/auth.js';
+import { authenticateToken, requireTenant, authorizeRole } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -18,6 +18,32 @@ router.get('/', async (req, res) => {
       [req.user.id, req.user.company_id]
     );
     res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/** Kuryer mobil cihaz tokeni (FCM) */
+router.post('/device-token', authorizeRole(['courier']), async (req, res) => {
+  try {
+    const { token, platform = 'android' } = req.body;
+
+    if (!token || !String(token).trim()) {
+      return res.status(400).json({ error: 'token required' });
+    }
+
+    const plat = ['android', 'ios', 'web'].includes(platform) ? platform : 'android';
+
+    const result = await pool.query(
+      `INSERT INTO push_device_tokens (user_id, platform, token, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (user_id, platform)
+       DO UPDATE SET token = EXCLUDED.token, updated_at = NOW()
+       RETURNING id, user_id, platform, created_at, updated_at`,
+      [req.user.id, plat, String(token).trim()]
+    );
+
+    res.status(201).json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

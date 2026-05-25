@@ -106,8 +106,10 @@ Kuryer tamamladıqda admin paneldə də `completed` olur (eyni status).
 
 ### Bildirişlər (kuryer)
 - `GET /api/notifications`
+- `POST /api/notifications/device-token` — FCM `{ token, platform }`
 - `PATCH /api/notifications/:id/read`
 - `PATCH /api/notifications/read-all`
+- Admin `courier_id` təyin → avtomatik bildiriş + push (`FIREBASE_SERVICE_ACCOUNT_JSON`)
 
 ### İstifadəçilər (admin)
 - `POST /api/users` — kuryer/admin yaratmaq

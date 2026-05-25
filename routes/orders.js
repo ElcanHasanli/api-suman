@@ -7,7 +7,8 @@ import {
   requireTenant,
 } from '../middleware/auth.js';
 import { assertSameCompany } from '../middleware/tenant.js';
-import { completeOrder, markOrderAsPaid, notifyCourierAssignment } from '../utils/orderCompletion.js';
+import { completeOrder, markOrderAsPaid } from '../utils/orderCompletion.js';
+import { notifyCourierOnAssign } from '../lib/notifyCourier.js';
 import { buildCompletedOrdersFilter, COMPLETED_ORDER_SELECT } from '../utils/historyQuery.js';
 import { buildExcelBuffer, sendExcel } from '../utils/excel.js';
 
@@ -282,11 +283,12 @@ router.post('/', authorizeRole(['admin']), async (req, res) => {
     const order = result.rows[0];
 
     if (courier_id) {
-      await notifyCourierAssignment(
-        courier_id,
-        order.id,
-        `Yeni sifariş #${order.id} — ${customerData.name} ${customerData.surname || ''}`.trim()
-      );
+      await notifyCourierOnAssign({
+        companyId: req.user.company_id,
+        orderId: order.id,
+        courierId: courier_id,
+        previousCourierId: null,
+      });
     }
 
     res.status(201).json(await getOrderById(order.id, req.user.company_id));
@@ -352,11 +354,12 @@ router.put('/:id', authorizeRole(['admin']), async (req, res) => {
     );
 
     if (courierChanged && newCourierId) {
-      await notifyCourierAssignment(
-        newCourierId,
-        req.params.id,
-        `Sizə sifariş təyin edildi #${req.params.id}`
-      );
+      await notifyCourierOnAssign({
+        companyId: req.user.company_id,
+        orderId: req.params.id,
+        courierId: newCourierId,
+        previousCourierId: existing.courier_id,
+      });
     }
 
     res.json(await getOrderById(req.params.id, req.user.company_id));

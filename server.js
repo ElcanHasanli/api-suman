@@ -31,6 +31,9 @@ const BUILTIN_ORIGINS = [
   'https://courier.suman.khamsacraft.az',
   'http://localhost:3000',
   'http://localhost:5173',
+  'https://localhost',
+  'capacitor://localhost',
+  'ionic://localhost',
 ];
 
 const corsOrigins = [

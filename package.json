@@ -14,6 +14,7 @@
     "db:migrate:phone": "node migrate-unique-customer-phone.js",
     "db:migrate:tenant": "node migrate-multi-tenant.js",
     "db:migrate:v2": "node migrate-features-v2.js",
+    "db:migrate:notifications": "node scripts/db-migrate-notifications.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -30,6 +31,7 @@
     "exceljs": "^4.4.0",
     "express": "^4.18.2",
     "express-validator": "^7.0.0",
+    "firebase-admin": "^12.7.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.11.3",
