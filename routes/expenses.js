@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../config/database.js';
 import { authenticateToken, authorizeRole, requireTenant } from '../middleware/auth.js';
 import { buildDateFilter } from '../utils/periodFilter.js';
+import { notifyAdminsExpenseCreated } from '../lib/notifyAdmins.js';
 
 const router = express.Router();
 
@@ -73,7 +74,17 @@ router.post('/', authorizeRole(['courier', 'admin']), async (req, res) => {
       ]
     );
 
-    res.status(201).json(result.rows[0]);
+    const expense = result.rows[0];
+
+    if (req.user.role === 'courier') {
+      notifyAdminsExpenseCreated(
+        req.user.company_id,
+        expense,
+        req.user.id
+      ).catch(() => {});
+    }
+
+    res.status(201).json(expense);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

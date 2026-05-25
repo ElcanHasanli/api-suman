@@ -15,6 +15,7 @@
     "db:migrate:tenant": "node migrate-multi-tenant.js",
     "db:migrate:v2": "node migrate-features-v2.js",
     "db:migrate:notifications": "node scripts/db-migrate-notifications.js",
+    "db:migrate:devices": "node scripts/db-migrate-device-tokens.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

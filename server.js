@@ -14,6 +14,7 @@ import historyRoutes from './routes/history.js';
 import notificationRoutes from './routes/notifications.js';
 import ownerRoutes from './routes/owner.js';
 import expenseRoutes from './routes/expenses.js';
+import deviceRoutes from './routes/devices.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 dotenv.config();
@@ -66,6 +67,7 @@ app.use('/api/history', historyRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/owner', ownerRoutes);
 app.use('/api/expenses', expenseRoutes);
+app.use('/api/devices', deviceRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

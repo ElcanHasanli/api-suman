@@ -104,12 +104,12 @@ Kuryer tamamladıqda admin paneldə də `completed` olur (eyni status).
 - `GET /api/history?period=today|week|month|custom&startDate=&endDate=` — sifarişlər + gəlir xülasəsi
 - `GET /api/history/export?period=...` — Excel
 
-### Bildirişlər (kuryer)
-- `GET /api/notifications`
-- `POST /api/notifications/device-token` — FCM `{ token, platform }`
-- `PATCH /api/notifications/:id/read`
-- `PATCH /api/notifications/read-all`
-- Admin `courier_id` təyin → avtomatik bildiriş + push (`FIREBASE_SERVICE_ACCOUNT_JSON`)
+### Bildirişlər / Push (Android + iOS)
+- `POST /api/devices/register` — `{ token, platform: "android"|"ios", app: "admin"|"courier" }` (login sonrası)
+- `DELETE /api/devices/unregister` — `{ token }`
+- Kuryer: `GET /api/notifications`, `POST /api/notifications/device-token` (köhnə, eyni `platform`)
+- Kuryer təyin → push; kuryer tamamlayır/xərc/qeyd → admin push (`FIREBASE_SERVICE_ACCOUNT_JSON`)
+- Sənədlər: `docs/PUSH-ADMIN.md`, `docs/PUSH-KURYEER.md`
 
 ### İstifadəçilər (admin)
 - `POST /api/users` — kuryer/admin yaratmaq

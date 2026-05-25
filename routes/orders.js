@@ -9,6 +9,10 @@ import {
 import { assertSameCompany } from '../middleware/tenant.js';
 import { completeOrder, markOrderAsPaid } from '../utils/orderCompletion.js';
 import { notifyCourierOnAssign } from '../lib/notifyCourier.js';
+import {
+  notifyAdminsOrderCompleted,
+  notifyAdminsOrderNote,
+} from '../lib/notifyAdmins.js';
 import { buildCompletedOrdersFilter, COMPLETED_ORDER_SELECT } from '../utils/historyQuery.js';
 import { buildExcelBuffer, sendExcel } from '../utils/excel.js';
 
@@ -217,6 +221,15 @@ router.post('/:id/notes', authorizeRole(['admin', 'courier']), async (req, res) 
         String(noteBody).trim(),
       ]
     );
+
+    if (req.user.role === 'courier') {
+      notifyAdminsOrderNote(
+        req.user.company_id,
+        req.params.id,
+        req.user.id,
+        String(noteBody).trim()
+      ).catch(() => {});
+    }
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -444,6 +457,14 @@ router.put('/:id/complete', authorizeRole(['courier', 'admin']), async (req, res
       full_bidons_given: full_bidons_given ?? existing.full_bidons_given ?? existing.bidons_count,
       notes,
     });
+
+    if (req.user.role === 'courier') {
+      notifyAdminsOrderCompleted(
+        req.user.company_id,
+        order.id,
+        req.user.id
+      ).catch(() => {});
+    }
 
     res.json(await getOrderById(order.id, req.user.company_id));
   } catch (err) {

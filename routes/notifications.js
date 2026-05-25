@@ -26,21 +26,35 @@ router.get('/', async (req, res) => {
 /** Kuryer mobil cihaz tokeni (FCM) */
 router.post('/device-token', authorizeRole(['courier']), async (req, res) => {
   try {
-    const { token, platform = 'android' } = req.body;
+    const { token, platform } = req.body;
 
     if (!token || !String(token).trim()) {
       return res.status(400).json({ error: 'token required' });
     }
 
-    const plat = ['android', 'ios', 'web'].includes(platform) ? platform : 'android';
+    if (!platform || !['android', 'ios', 'web'].includes(platform)) {
+      return res.status(400).json({
+        error: 'platform required: android | ios | web',
+      });
+    }
 
-    const result = await pool.query(
+    const tokenStr = String(token).trim();
+
+    await pool.query(
       `INSERT INTO push_device_tokens (user_id, platform, token, updated_at)
        VALUES ($1, $2, $3, NOW())
        ON CONFLICT (user_id, platform)
+       DO UPDATE SET token = EXCLUDED.token, updated_at = NOW()`,
+      [req.user.id, platform, tokenStr]
+    ).catch(() => {});
+
+    const result = await pool.query(
+      `INSERT INTO device_tokens (user_id, company_id, role, token, platform, app, updated_at)
+       VALUES ($1, $2, 'courier', $3, $4, 'courier', NOW())
+       ON CONFLICT (user_id, platform, app)
        DO UPDATE SET token = EXCLUDED.token, updated_at = NOW()
-       RETURNING id, user_id, platform, created_at, updated_at`,
-      [req.user.id, plat, String(token).trim()]
+       RETURNING *`,
+      [req.user.id, req.user.company_id, tokenStr, platform]
     );
 
     res.status(201).json(result.rows[0]);
