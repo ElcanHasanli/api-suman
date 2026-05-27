@@ -54,6 +54,7 @@ async function initDatabase() {
         company_id INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
         customer_id INT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
         courier_id INT REFERENCES users(id) ON DELETE SET NULL,
+        assigned_at TIMESTAMPTZ,
         bidons_count INT DEFAULT 1,
         address TEXT NOT NULL,
         price DECIMAL(10, 2) NOT NULL,
