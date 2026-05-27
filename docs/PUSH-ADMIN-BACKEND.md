@@ -43,6 +43,7 @@ DB: `device_tokens` — `UNIQUE (user_id, platform, app)`
 | Sifariş tamamlandı (kuryer) | `order_completed` | `orders` |
 | Yeni xərc (kuryer) | `expense_created` | `history` |
 | Sifariş qeydi (kuryer) | `order_note` | `orders` |
+| Su doldurma anbarı (kuryer) | `warehouse_updated` | `warehouse` |
 
 Yalnız **kuryer** tərəfindən edilən əməliyyatlarda admin-ə gedir.
 

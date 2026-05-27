@@ -111,6 +111,14 @@ Kuryer tamamladıqda admin paneldə də `completed` olur (eyni status).
 - Kuryer təyin → push; kuryer tamamlayır/xərc/qeyd → admin push (`FIREBASE_SERVICE_ACCOUNT_JSON`)
 - Sənədlər: `docs/PUSH-ADMIN.md`, `docs/PUSH-KURYEER.md`
 
+### Su doldurma anbarı
+- `GET /api/warehouse/summary` — anbar + müştəri cəmi `active_bidons`
+- `GET /api/warehouse/updates` — tarixçə
+- `POST /api/warehouse/update` — kuryer (boş/dolu daxil, götürülən, yerdə qaldı)
+- `PATCH /api/warehouse/stock` — admin düzəlişi
+- Kuryer yeniləyəndə admin push: `warehouse_updated`
+- `docs/WAREHOUSE.md`, `docs/ADMIN_FRONTEND_WAREHOUSE.md`, `docs/COURIER_FRONTEND_WAREHOUSE.md`
+
 ### İstifadəçilər (admin)
 - `POST /api/users` — kuryer/admin yaratmaq
 - `GET /api/users`

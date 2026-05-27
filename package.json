@@ -16,6 +16,7 @@
     "db:migrate:v2": "node migrate-features-v2.js",
     "db:migrate:notifications": "node scripts/db-migrate-notifications.js",
     "db:migrate:devices": "node scripts/db-migrate-device-tokens.js",
+    "db:migrate:warehouse": "node scripts/db-migrate-warehouse.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

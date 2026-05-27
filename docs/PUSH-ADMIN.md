@@ -56,5 +56,7 @@ DELETE /api/devices/unregister
 | `order_completed` | `orders` | `order_id` |
 | `expense_created` | `history` | `expense_id` |
 | `order_note` | `orders` | `order_id` |
+| `warehouse_updated` | `warehouse` | `warehouse_update_id` |
 
-Backend spec: `docs/PUSH-ADMIN-BACKEND.md`
+Backend spec: `docs/PUSH-ADMIN-BACKEND.md`  
+Anbar: `docs/WAREHOUSE.md`
