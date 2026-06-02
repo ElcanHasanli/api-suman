@@ -1,6 +1,6 @@
-# Admin — 30+ gün passiv müştəri bildirişi
+# Admin — passiv müştəri bildirişi
 
-Backend artıq avtomatik yoxlayır: əgər müştəri 30+ gün sifariş verməyibsə, adminlərə:
+Backend avtomatik yoxlayır (default **1 dəqiqə** test üçün; production: `.env` → `CUSTOMER_INACTIVITY_MINUTES=43200` = 30 gün):
 
 1) `notifications` siyahısına in-app bildiriş yazılır  
 2) FCM push göndərilir (`customer_inactive`)
@@ -16,7 +16,7 @@ Backend artıq avtomatik yoxlayır: əgər müştəri 30+ gün sifariş verməyi
 {
   "type": "customer_inactive",
   "customer_id": "42",
-  "last_order_date": "2026-04-28",
+  "last_order_at": "2026-06-02T15:30:00.000Z",
   "screen": "customers"
 }
 ```
@@ -24,7 +24,7 @@ Backend artıq avtomatik yoxlayır: əgər müştəri 30+ gün sifariş verməyi
 ## In-app notification
 
 `type: customer_inactive`  
-`message`: `<Müştəri adı> 30+ gündür sifariş verməyib (son: YYYY-MM-DD)`
+`message`: `<Müştəri adı> 1 dəqiqədir sifariş verməyib (son: …)` (müddət konfiqurasiyadan asılıdır)
 
 ## Frontend üçün
 
