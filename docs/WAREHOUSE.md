@@ -28,7 +28,7 @@ Yoxlama: `əvvəlki_dolu + full_in - full_out` ≈ `remaining_full` (uyğunsuzlu
 | Method | URL | Kim |
 |--------|-----|-----|
 | GET | `/api/warehouse/summary` | admin, kuryer |
-| GET | `/api/warehouse/updates?period=&courier_id=` | admin, kuryer |
+| GET | `/api/warehouse/updates?period=yesterday\|today\|custom&startDate=&endDate=` | admin, kuryer |
 | POST | `/api/warehouse/update` | kuryer |
 | PATCH | `/api/warehouse/stock` | admin (birbaşa say) |
 

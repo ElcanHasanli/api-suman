@@ -1,3 +1,9 @@
+import { BAKU_TODAY } from './bakuDate.js';
+
+function completedAtBaku() {
+  return `(o.completed_at AT TIME ZONE 'Asia/Baku')::date`;
+}
+
 export function buildCompletedOrdersFilter(period, startDate, endDate, companyId = null) {
   let clause = `o.status = 'completed'`;
   const params = [];
@@ -7,15 +13,19 @@ export function buildCompletedOrdersFilter(period, startDate, endDate, companyId
     clause += ` AND o.company_id = $${params.length}`;
   }
 
+  const col = completedAtBaku();
+
   if (period === 'today') {
-    clause += ` AND DATE(o.completed_at) = CURRENT_DATE`;
+    clause += ` AND ${col} = ${BAKU_TODAY}`;
+  } else if (period === 'yesterday') {
+    clause += ` AND ${col} = (${BAKU_TODAY} - INTERVAL '1 day')::date`;
   } else if (period === 'week') {
-    clause += ` AND o.completed_at >= CURRENT_DATE - INTERVAL '7 days'`;
+    clause += ` AND ${col} >= (${BAKU_TODAY} - INTERVAL '6 days')::date`;
   } else if (period === 'month') {
-    clause += ` AND DATE_TRUNC('month', o.completed_at) = DATE_TRUNC('month', CURRENT_DATE)`;
+    clause += ` AND ${col} >= date_trunc('month', ${BAKU_TODAY})::date`;
   } else if (period === 'custom' && startDate && endDate) {
     params.push(startDate, endDate);
-    clause += ` AND o.completed_at >= $${params.length - 1}::timestamp AND o.completed_at < ($${params.length}::date + INTERVAL '1 day')`;
+    clause += ` AND ${col} >= $${params.length - 1}::date AND ${col} <= $${params.length}::date`;
   }
 
   return { clause, params };

@@ -79,10 +79,11 @@ async function resetDatabase() {
       CREATE TABLE IF NOT EXISTS expenses (
         id SERIAL PRIMARY KEY,
         company_id INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-        courier_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        courier_id INT REFERENCES users(id) ON DELETE SET NULL,
         amount DECIMAL(10, 2) NOT NULL,
         description VARCHAR(255) NOT NULL,
         category VARCHAR(100),
+        source VARCHAR(20) NOT NULL DEFAULT 'courier',
         created_by INT NOT NULL REFERENCES users(id),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );

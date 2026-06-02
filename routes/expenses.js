@@ -3,8 +3,15 @@ import pool from '../config/database.js';
 import { authenticateToken, authorizeRole, requireTenant } from '../middleware/auth.js';
 import { buildDateFilter } from '../utils/periodFilter.js';
 import { notifyAdminsExpenseCreated } from '../lib/notifyAdmins.js';
+import { formatExpenseRow, isValidAdminCategory } from '../utils/expenseFormat.js';
 
 const router = express.Router();
+
+const expenseListSelect = `
+  SELECT e.*, u.name AS courier_name
+  FROM expenses e
+  LEFT JOIN users u ON e.courier_id = u.id
+`;
 
 router.use(authenticateToken, requireTenant);
 
@@ -12,11 +19,7 @@ router.get('/', async (req, res) => {
   try {
     const { period, startDate, endDate, courier_id } = req.query;
 
-    let query = `
-      SELECT e.*, u.name AS courier_name
-      FROM expenses e
-      JOIN users u ON e.courier_id = u.id
-      WHERE e.company_id = $1`;
+    let query = `${expenseListSelect} WHERE e.company_id = $1`;
     const params = [req.user.company_id];
 
     if (req.user.role === 'courier') {
@@ -31,9 +34,10 @@ router.get('/', async (req, res) => {
     query += df.clause + ' ORDER BY e.created_at DESC';
 
     const result = await pool.query(query, df.params);
-    const totalExpenses = result.rows.reduce((s, r) => s + Number(r.amount), 0);
+    const expenses = result.rows.map(formatExpenseRow);
+    const totalExpenses = expenses.reduce((s, r) => s + Number(r.amount), 0);
 
-    res.json({ expenses: result.rows, totalExpenses });
+    res.json({ expenses, totalExpenses });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -41,29 +45,52 @@ router.get('/', async (req, res) => {
 
 router.post('/', authorizeRole(['courier', 'admin']), async (req, res) => {
   try {
-    const { amount, description, category, courier_id } = req.body;
+    const { amount, description, category, courier_id, source: bodySource } = req.body;
 
     if (!amount || !description) {
       return res.status(400).json({ error: 'Amount and description required' });
     }
 
-    const courierId = req.user.role === 'courier' ? req.user.id : courier_id;
+    let source;
+    let courierId;
 
-    if (!courierId) {
-      return res.status(400).json({ error: 'courier_id required for admin' });
-    }
+    if (req.user.role === 'courier') {
+      source = 'courier';
+      courierId = req.user.id;
+    } else {
+      const wantsCourier =
+        bodySource === 'courier' || (courier_id != null && courier_id !== '');
 
-    const courier = await pool.query(
-      `SELECT id FROM users WHERE id = $1 AND company_id = $2 AND role = 'courier'`,
-      [courierId, req.user.company_id]
-    );
-    if (courier.rows.length === 0) {
-      return res.status(400).json({ error: 'Courier not found' });
+      if (wantsCourier) {
+        if (!courier_id) {
+          return res.status(400).json({ error: 'courier_id required when source is courier' });
+        }
+        const courier = await pool.query(
+          `SELECT id FROM users WHERE id = $1 AND company_id = $2 AND role = 'courier'`,
+          [courier_id, req.user.company_id]
+        );
+        if (courier.rows.length === 0) {
+          return res.status(400).json({ error: 'Courier not found' });
+        }
+        source = 'courier';
+        courierId = courier_id;
+      } else {
+        source = 'admin';
+        courierId = null;
+        if (category && !isValidAdminCategory(category)) {
+          return res.status(400).json({
+            error:
+              'Invalid category. Use: payroll, fuel, rent, supplies, equipment, other',
+          });
+        }
+      }
     }
 
     const result = await pool.query(
-      `INSERT INTO expenses (company_id, courier_id, amount, description, category, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      `INSERT INTO expenses (
+         company_id, courier_id, amount, description, category, created_by, source
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
       [
         req.user.company_id,
         courierId,
@@ -71,10 +98,15 @@ router.post('/', authorizeRole(['courier', 'admin']), async (req, res) => {
         description,
         category || null,
         req.user.id,
+        source,
       ]
     );
 
-    const expense = result.rows[0];
+    const row = await pool.query(
+      `${expenseListSelect} WHERE e.id = $1`,
+      [result.rows[0].id]
+    );
+    const expense = formatExpenseRow(row.rows[0]);
 
     if (req.user.role === 'courier') {
       notifyAdminsExpenseCreated(
@@ -99,7 +131,7 @@ router.delete('/:id', authorizeRole(['admin']), async (req, res) => {
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Expense not found' });
     }
-    res.json({ message: 'Expense deleted', expense: result.rows[0] });
+    res.json({ message: 'Expense deleted', expense: formatExpenseRow(result.rows[0]) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

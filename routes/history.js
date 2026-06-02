@@ -4,6 +4,7 @@ import { authenticateToken, authorizeRole, requireTenant } from '../middleware/a
 import { buildCompletedOrdersFilter, COMPLETED_ORDER_SELECT } from '../utils/historyQuery.js';
 import { buildDateFilter } from '../utils/periodFilter.js';
 import { buildExcelBuffer, sendExcel } from '../utils/excel.js';
+import { formatExpenseRow } from '../utils/expenseFormat.js';
 const router = express.Router();
 
 router.use(authenticateToken, requireTenant, authorizeRole(['admin']));
@@ -63,13 +64,13 @@ async function fetchExpenses(period, startDate, endDate, companyId) {
   let query = `
     SELECT e.*, u.name AS courier_name
     FROM expenses e
-    JOIN users u ON e.courier_id = u.id
+    LEFT JOIN users u ON e.courier_id = u.id
     WHERE e.company_id = $1`;
   const params = [companyId];
   const df = buildDateFilter('e.created_at', period, startDate, endDate, params);
   query += df.clause + ' ORDER BY e.created_at DESC';
   const result = await pool.query(query, df.params);
-  return result.rows;
+  return result.rows.map(formatExpenseRow);
 }
 
 async function fetchDebtPayments(period, startDate, endDate, companyId) {
