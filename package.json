@@ -23,6 +23,7 @@
     "db:migrate:expense-source": "node scripts/db-migrate-expense-source.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  
   "keywords": [
     "damacana",
     "water",
