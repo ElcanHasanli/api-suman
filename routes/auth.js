@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import pool from '../config/database.js';
 import { getCompanyByLicense, validateCompanyAccess } from '../utils/company.js';
+import { checkAndNotifyInactiveCustomers } from '../utils/customerInactivity.js';
 
 const router = express.Router();
 
@@ -75,6 +76,10 @@ router.post('/login', async (req, res) => {
 
     if (Number(user.company_id) !== Number(company.id)) {
       return res.status(403).json({ error: 'Bu hesab bu lisenziya koduna aid deyil' });
+    }
+
+    if (user.role === 'admin') {
+      checkAndNotifyInactiveCustomers(user.company_id).catch(() => {});
     }
 
     res.json(await buildAuthResponse(user, company));

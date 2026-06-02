@@ -18,6 +18,7 @@
     "db:migrate:devices": "node scripts/db-migrate-device-tokens.js",
     "db:migrate:warehouse": "node scripts/db-migrate-warehouse.js",
     "db:migrate:assigned-at": "node scripts/db-migrate-assigned-at.js",
+    "db:migrate:customer-inactivity": "node scripts/db-migrate-customer-inactivity-alerts.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

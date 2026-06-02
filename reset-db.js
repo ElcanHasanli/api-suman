@@ -184,6 +184,17 @@ async function resetDatabase() {
     `);
 
     await client.query(`
+      CREATE TABLE IF NOT EXISTS customer_inactivity_alerts (
+        id SERIAL PRIMARY KEY,
+        company_id INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+        customer_id INT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+        last_order_date DATE NOT NULL,
+        notified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (company_id, customer_id, last_order_date)
+      );
+    `);
+
+    await client.query(`
       CREATE INDEX idx_users_company ON users(company_id);
       CREATE INDEX idx_customers_company ON customers(company_id);
       CREATE INDEX idx_orders_company ON orders(company_id);
@@ -191,6 +202,8 @@ async function resetDatabase() {
       CREATE INDEX idx_orders_courier ON orders(courier_id);
       CREATE INDEX idx_orders_completed_at ON orders(completed_at);
       CREATE INDEX idx_notifications_user ON notifications(user_id, read);
+      CREATE INDEX idx_customer_inactivity_alerts_company
+      ON customer_inactivity_alerts(company_id, notified_at DESC);
     `);
 
     await client.query('COMMIT');

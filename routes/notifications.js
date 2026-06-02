@@ -1,6 +1,7 @@
 import express from 'express';
 import pool from '../config/database.js';
 import { authenticateToken, requireTenant, authorizeRole } from '../middleware/auth.js';
+import { checkAndNotifyInactiveCustomers } from '../utils/customerInactivity.js';
 
 const router = express.Router();
 
@@ -8,6 +9,10 @@ router.use(authenticateToken, requireTenant);
 
 router.get('/', async (req, res) => {
   try {
+    if (req.user.role === 'admin') {
+      await checkAndNotifyInactiveCustomers(req.user.company_id);
+    }
+
     const result = await pool.query(
       `SELECT n.*, o.status AS order_status, o.address AS order_address
        FROM notifications n
