@@ -1,33 +1,33 @@
-# Admin — passiv müştəri bildirişi
+# Admin — 1 ay passiv müştəri bildirişi
 
-Backend avtomatik yoxlayır (default **1 dəqiqə** test üçün; production: `.env` → `CUSTOMER_INACTIVITY_MINUTES=43200` = 30 gün):
+Backend avtomatik yoxlayır: müştəri **1 ay (30 gün)** sifariş verməyibsə, adminlərə:
 
-1) `notifications` siyahısına in-app bildiriş yazılır  
-2) FCM push göndərilir (`customer_inactive`)
+1) `notifications` siyahısına in-app bildiriş  
+2) FCM push (`customer_inactive`)
+
+Test rejimi yoxdur — yalnız real 30 gün (Asia/Baku).
 
 ## Trigger
 
-- Admin login (`POST /api/auth/login`) sonrası arxa planda
-- Admin bildiriş səhifəsi (`GET /api/notifications`) açılarkən
+- Admin login sonrası
+- `GET /api/notifications` açılanda
 
-## Bildiriş payload (push)
+## Push data
 
 ```json
 {
   "type": "customer_inactive",
   "customer_id": "42",
-  "last_order_at": "2026-06-02T15:30:00.000Z",
+  "last_order_date": "2026-04-28",
   "screen": "customers"
 }
 ```
 
-## In-app notification
+## In-app
 
 `type: customer_inactive`  
-`message`: `<Müştəri adı> 1 dəqiqədir sifariş verməyib (son: …)` (müddət konfiqurasiyadan asılıdır)
+`message`: `<Müştəri adı> 1 aydır sifariş verməyib (son: YYYY-MM-DD)`
 
-## Frontend üçün
+## Frontend
 
-- Bildirişdə `type === "customer_inactive"` olduqda `customers` ekranına yönləndir
-- Mümkünsə `customer_id` ilə həmin müştərini highlight et
-- Mövcud `/api/notifications` endpoint kifayətdir, yeni endpoint lazım deyil
+- `type === "customer_inactive"` → `customers` səhifəsi, `customer_id` ilə fokus

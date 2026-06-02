@@ -1,5 +1,5 @@
 /**
- * 30+ gün sifariş etməyən müştəri alertləri (admin üçün)
+ * 1 ay (30 gün) sifariş etməyən müştəri alertləri (admin üçün)
  * npm run db:migrate:customer-inactivity
  */
 import pool from '../config/database.js';

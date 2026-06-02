@@ -44,7 +44,7 @@ DB: `device_tokens` — `UNIQUE (user_id, platform, app)`
 | Yeni xərc (kuryer) | `expense_created` | `history` |
 | Sifariş qeydi (kuryer) | `order_note` | `orders` |
 | Su doldurma anbarı (kuryer) | `warehouse_updated` | `warehouse` |
-| 30+ gün passiv müştəri | `customer_inactive` | `customers` |
+| 1 ay passiv müştəri | `customer_inactive` | `customers` |
 
 Yalnız **kuryer** tərəfindən edilən əməliyyatlarda admin-ə gedir.
 
