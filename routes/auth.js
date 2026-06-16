@@ -88,6 +88,52 @@ router.post('/login', async (req, res) => {
   }
 });
 
+/** Token etibarlılığını yoxla (admin/kuryer app startup) */
+router.get('/me', async (req, res) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const result = await pool.query(
+      `SELECT u.id, u.email, u.name, u.role, u.status, u.company_id, c.name AS company_name
+       FROM users u
+       LEFT JOIN companies c ON u.company_id = c.id
+       WHERE u.id = $1`,
+      [payload.id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(401).json({ error: 'User not found', code: 'TOKEN_INVALID' });
+    }
+
+    const user = result.rows[0];
+    if (user.status === 'inactive') {
+      return res.status(403).json({ error: 'Hesab deaktiv edilib' });
+    }
+
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        company_id: user.company_id,
+        company_name: user.company_name,
+      },
+    });
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' });
+    }
+    return res.status(401).json({ error: 'Invalid token', code: 'TOKEN_INVALID' });
+  }
+});
+
 /** Yalnız owner — public register bağlanıb. */
 router.post('/register', async (req, res) => {
   res.status(403).json({

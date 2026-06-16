@@ -10,7 +10,7 @@ router.use(authenticateToken, requireTenant);
 router.get('/', async (req, res) => {
   try {
     if (req.user.role === 'admin') {
-      await checkAndNotifyInactiveCustomers(req.user.company_id);
+      checkAndNotifyInactiveCustomers(req.user.company_id).catch(() => {});
     }
 
     const result = await pool.query(
