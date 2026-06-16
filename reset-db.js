@@ -208,19 +208,19 @@ async function createSchema(client) {
       UNIQUE (user_id, platform, app)
     );
 
-    CREATE INDEX idx_users_company ON users(company_id);
-    CREATE INDEX idx_customers_company ON customers(company_id);
-    CREATE INDEX idx_orders_company ON orders(company_id);
-    CREATE INDEX idx_orders_status ON orders(status);
-    CREATE INDEX idx_orders_courier ON orders(courier_id);
-    CREATE INDEX idx_orders_completed_at ON orders(completed_at);
-    CREATE INDEX idx_orders_assigned_at ON orders(company_id, courier_id, assigned_at)
+    CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id);
+    CREATE INDEX IF NOT EXISTS idx_customers_company ON customers(company_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_company ON orders(company_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+    CREATE INDEX IF NOT EXISTS idx_orders_courier ON orders(courier_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_completed_at ON orders(completed_at);
+    CREATE INDEX IF NOT EXISTS idx_orders_assigned_at ON orders(company_id, courier_id, assigned_at)
       WHERE status IN ('assigned', 'in_progress');
-    CREATE INDEX idx_notifications_user ON notifications(user_id, read);
-    CREATE INDEX idx_expenses_company ON expenses(company_id, created_at);
-    CREATE INDEX idx_warehouse_updates_company ON warehouse_updates(company_id, created_at DESC);
-    CREATE INDEX idx_customer_inactivity_alerts_company ON customer_inactivity_alerts(company_id, notified_at DESC);
-    CREATE INDEX idx_device_tokens_company_admin ON device_tokens(company_id, app) WHERE app = 'admin';
+    CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read);
+    CREATE INDEX IF NOT EXISTS idx_expenses_company ON expenses(company_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_warehouse_updates_company ON warehouse_updates(company_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_customer_inactivity_alerts_company ON customer_inactivity_alerts(company_id, notified_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_device_tokens_company_admin ON device_tokens(company_id, app) WHERE app = 'admin';
   `);
 }
 
