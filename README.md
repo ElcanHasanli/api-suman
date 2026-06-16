@@ -29,6 +29,26 @@ npm run db:seed
 npm run dev
 ```
 
+### Verilənlər bazasını sıfırlamaq (production)
+
+**Diqqət:** Geri qaytarılmaz — bütün şirkətlər, müştərilər, sifarişlər, xərclər, anbar, bildirişlər silinir.
+
+```bash
+cd ~/api-suman
+pm2 stop api-suman          # API dayansın (tövsiyə)
+npm run db:reset            # biznes məlumatları silinir; user hesabları saxlanır
+npm run db:seed             # istəyə görə: demo şirkət + admin/kuryer
+pm2 start api-suman
+```
+
+Hamısını sıfırdan (owner daxil bütün userlər):
+```bash
+npm run db:reset -- --drop-users
+npm run db:seed
+```
+
+Seed olmadan: owner paneldən (`owner@suman.az`) yeni şirkət və admin/kuryer yaradın.
+
 ### Köhnə / yanlış sxem var idisə
 
 Əvvəlki `orders` cədvəlində `customer_name` kimi sütunlar ola bilər — bu API ilə uyğun deyil.
