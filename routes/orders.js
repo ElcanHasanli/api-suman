@@ -7,7 +7,7 @@ import {
   requireTenant,
 } from '../middleware/auth.js';
 import { assertSameCompany } from '../middleware/tenant.js';
-import { completeOrder, markOrderAsPaid } from '../utils/orderCompletion.js';
+import { completeOrder, markOrderAsPaid, updateCompletedOrder } from '../utils/orderCompletion.js';
 import { notifyCourierOnAssign } from '../lib/notifyCourier.js';
 import {
   notifyAdminsOrderCompleted,
@@ -15,7 +15,12 @@ import {
 } from '../lib/notifyAdmins.js';
 import { buildCompletedOrdersFilter, COMPLETED_ORDER_SELECT } from '../utils/historyQuery.js';
 import { buildExcelBuffer, sendExcel } from '../utils/excel.js';
-import { BAKU_TODAY, courierActiveOrdersClause } from '../utils/bakuDate.js';
+import {
+  BAKU_TODAY,
+  courierVisibleOrdersClause,
+  canCourierEditCompletion,
+  COURIER_COMPLETION_EDIT_HOURS,
+} from '../utils/bakuDate.js';
 
 const router = express.Router();
 
@@ -31,6 +36,24 @@ const orderListSelect = `
   LEFT JOIN users u ON o.courier_id = u.id
 `;
 
+function enrichOrderForUser(order, user) {
+  if (!order || user?.role !== 'courier') return order;
+
+  const editable = canCourierEditCompletion(order);
+  const editableUntil = order.completed_at
+    ? new Date(
+        new Date(order.completed_at).getTime() +
+          COURIER_COMPLETION_EDIT_HOURS * 60 * 60 * 1000
+      ).toISOString()
+    : null;
+
+  return {
+    ...order,
+    courier_editable: editable,
+    courier_editable_until: editable ? editableUntil : null,
+  };
+}
+
 async function getOrderById(id, companyId, user = null) {
   let query = `${orderListSelect} WHERE o.id = $1 AND o.company_id = $2`;
   const params = [id, companyId];
@@ -38,11 +61,12 @@ async function getOrderById(id, companyId, user = null) {
   if (user?.role === 'courier') {
     params.push(user.id);
     query += ` AND o.courier_id = $${params.length}`;
-    query += ` AND ${courierActiveOrdersClause('o')}`;
+    query += ` AND ${courierVisibleOrdersClause('o')}`;
   }
 
   const result = await pool.query(query, params);
-  return result.rows[0] ?? null;
+  const row = result.rows[0] ?? null;
+  return row ? enrichOrderForUser(row, user) : null;
 }
 
 async function assertCourierInCompany(courierId, companyId) {
@@ -63,6 +87,10 @@ function assertCourierOrderAccess(req, order) {
     if (!order.assigned_at) return false;
   }
 
+  if (order.status === 'completed' && !canCourierEditCompletion(order)) {
+    return false;
+  }
+
   return true;
 }
 
@@ -75,7 +103,7 @@ router.get('/', async (req, res) => {
     if (req.user.role === 'courier') {
       params.push(req.user.id);
       query += ` AND o.courier_id = $${params.length}`;
-      query += ` AND ${courierActiveOrdersClause('o')}`;
+      query += ` AND ${courierVisibleOrdersClause('o')}`;
     } else if (courier_id) {
       params.push(courier_id);
       query += ` AND o.courier_id = $${params.length}`;
@@ -94,7 +122,10 @@ router.get('/', async (req, res) => {
     query += ' ORDER BY o.created_at DESC';
 
     const result = await pool.query(query, params);
-    res.json(result.rows);
+    const rows = req.user.role === 'courier'
+      ? result.rows.map((r) => enrichOrderForUser(r, req.user))
+      : result.rows;
+    res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -126,7 +157,7 @@ router.get('/courier/:courierId', authorizeCourierSelf('courierId'), async (req,
 
     let query = `${orderListSelect} WHERE o.courier_id = $1 AND o.company_id = $2`;
     if (req.user.role === 'courier') {
-      query += ` AND ${courierActiveOrdersClause('o')}`;
+      query += ` AND ${courierVisibleOrdersClause('o')}`;
     }
     query += ' ORDER BY o.created_at DESC';
 
@@ -134,7 +165,10 @@ router.get('/courier/:courierId', authorizeCourierSelf('courierId'), async (req,
       req.params.courierId,
       req.user.company_id,
     ]);
-    res.json(result.rows);
+    const rows = req.user.role === 'courier'
+      ? result.rows.map((r) => enrichOrderForUser(r, req.user))
+      : result.rows;
+    res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -501,6 +535,47 @@ router.put('/:id/complete', authorizeRole(['courier', 'admin']), async (req, res
     res.json(await getOrderById(order.id, req.user.company_id, req.user));
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+router.patch('/:id/completion', authorizeRole(['courier']), async (req, res) => {
+  try {
+    const existing = await getOrderById(req.params.id, req.user.company_id, req.user);
+    if (!existing) return res.status(404).json({ error: 'Order not found' });
+    if (!assertCourierOrderAccess(req, existing)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+    if (!canCourierEditCompletion(existing)) {
+      return res.status(403).json({
+        error: 'Completion edit window expired or order locked',
+        code: 'EDIT_WINDOW_EXPIRED',
+      });
+    }
+
+    const {
+      payment_type,
+      amount_paid,
+      empty_bidons_returned,
+      full_bidons_given,
+      notes,
+      price,
+    } = req.body;
+
+    const order = await updateCompletedOrder(req.params.id, req.user.id, {
+      payment_type: payment_type ?? existing.payment_type,
+      amount_paid,
+      empty_bidons_returned,
+      full_bidons_given,
+      notes,
+      price,
+    });
+
+    res.json(await getOrderById(order.id, req.user.company_id, req.user));
+  } catch (err) {
+    res.status(err.status || 500).json({
+      error: err.message,
+      code: err.code ?? undefined,
+    });
   }
 });
 

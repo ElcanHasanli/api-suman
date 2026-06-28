@@ -144,12 +144,15 @@ Header: `Authorization: Bearer <token>`
 ### Müştərilər
 | Method | URL |
 |--------|-----|
-| GET | `/api/customers` |
+| GET | `/api/customers` — elifba sırası (name, surname) |
+| GET | `/api/customers/:id` — detal + sifariş/borc tarixçəsi |
 | GET | `/api/customers/search?q=` |
 | GET | `/api/customers/export` (blob) |
 | POST | `/api/customers` |
 | PUT | `/api/customers/:id` |
 | DELETE | `/api/customers/:id` |
+
+Detal ekranı: **`docs/ADMIN_FRONTEND_CUSTOMER_DETAIL.md`**
 
 ### Sifarişlər
 | Method | URL |

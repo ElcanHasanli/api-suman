@@ -20,12 +20,65 @@ const customerColumns = [
   { header: 'Borc', key: 'debt', width: 10 },
 ];
 
+async function fetchCustomerDetail(customerId, companyId) {
+  const customerResult = await pool.query(
+    'SELECT * FROM customers WHERE id = $1 AND company_id = $2',
+    [customerId, companyId]
+  );
+  if (!customerResult.rows.length) return null;
+
+  const [statsResult, ordersResult, debtPaymentsResult] = await Promise.all([
+    pool.query(
+      `SELECT
+         COUNT(*)::int AS total_orders,
+         COUNT(*) FILTER (WHERE status = 'completed')::int AS completed_orders,
+         COUNT(*) FILTER (WHERE status IN ('assigned', 'in_progress'))::int AS active_orders,
+         MAX(created_at) AS last_order_at,
+         MAX(completed_at) AS last_completed_at,
+         COALESCE(SUM(price) FILTER (WHERE status = 'completed'), 0) AS total_order_value
+       FROM orders
+       WHERE customer_id = $1 AND company_id = $2`,
+      [customerId, companyId]
+    ),
+    pool.query(
+      `SELECT o.id, o.status, o.bidons_count, o.address, o.price, o.payment_type,
+              o.amount_paid, o.is_paid, o.notes, o.created_at, o.completed_at,
+              o.assigned_at, u.name AS courier_name
+       FROM orders o
+       LEFT JOIN users u ON o.courier_id = u.id
+       WHERE o.customer_id = $1 AND o.company_id = $2
+       ORDER BY o.created_at DESC
+       LIMIT 20`,
+      [customerId, companyId]
+    ),
+    pool.query(
+      `SELECT dp.id, dp.amount, dp.previous_debt, dp.new_debt, dp.created_at,
+              u.name AS recorded_by_name
+       FROM debt_payments dp
+       LEFT JOIN users u ON dp.recorded_by = u.id
+       WHERE dp.customer_id = $1 AND dp.company_id = $2
+       ORDER BY dp.created_at DESC
+       LIMIT 20`,
+      [customerId, companyId]
+    ),
+  ]);
+
+  return {
+    customer: mapCustomerRow(customerResult.rows[0]),
+    stats: statsResult.rows[0],
+    recent_orders: ordersResult.rows,
+    debt_payments: debtPaymentsResult.rows,
+  };
+}
+
 function mapCustomerRow(row) {
   return {
     ...row,
     display_name: formatCustomerDisplay(row),
   };
 }
+
+const CUSTOMER_LIST_ORDER = 'ORDER BY name ASC, surname ASC NULLS LAST, id ASC';
 
 async function findCustomerByNormalizedPhone(normalized, companyId, excludeId = null) {
   if (!normalized) return null;
@@ -62,7 +115,7 @@ router.get('/search', async (req, res) => {
       `SELECT * FROM customers
        WHERE company_id = $2
          AND (name ILIKE $1 OR surname ILIKE $1 OR phone ILIKE $1 OR phone2 ILIKE $1)
-       ORDER BY name ASC LIMIT 20`,
+       ORDER BY name ASC, surname ASC NULLS LAST LIMIT 20`,
       [pattern, req.user.company_id]
     );
     res.json(result.rows.map(mapCustomerRow));
@@ -74,7 +127,7 @@ router.get('/search', async (req, res) => {
 router.get('/export', authorizeRole(['admin']), async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT * FROM customers WHERE company_id = $1 ORDER BY name ASC',
+      `SELECT * FROM customers WHERE company_id = $1 ${CUSTOMER_LIST_ORDER}`,
       [req.user.company_id]
     );
     const rows = result.rows.map((r) => ({
@@ -91,7 +144,7 @@ router.get('/export', authorizeRole(['admin']), async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT * FROM customers WHERE company_id = $1 ORDER BY created_at DESC',
+      `SELECT * FROM customers WHERE company_id = $1 ${CUSTOMER_LIST_ORDER}`,
       [req.user.company_id]
     );
     res.json(result.rows.map(mapCustomerRow));
@@ -102,14 +155,11 @@ router.get('/', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT * FROM customers WHERE id = $1 AND company_id = $2',
-      [req.params.id, req.user.company_id]
-    );
-    if (result.rows.length === 0) {
+    const detail = await fetchCustomerDetail(req.params.id, req.user.company_id);
+    if (!detail) {
       return res.status(404).json({ error: 'Customer not found' });
     }
-    res.json(mapCustomerRow(result.rows[0]));
+    res.json(detail);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
