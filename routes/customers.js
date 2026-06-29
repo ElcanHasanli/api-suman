@@ -78,7 +78,54 @@ function mapCustomerRow(row) {
   };
 }
 
-const CUSTOMER_LIST_ORDER = 'ORDER BY name ASC, surname ASC NULLS LAST, id ASC';
+const CUSTOMER_LIST_ORDER = `ORDER BY LOWER(TRIM(CONCAT(name, ' ', COALESCE(surname, '')))) ASC NULLS LAST, id ASC`;
+
+function buildCustomerSearchClause(q, params) {
+  const term = (q || '').trim();
+  if (!term) {
+    return { clause: '', params };
+  }
+
+  const pattern = `%${term}%`;
+  params.push(pattern);
+  const idx = params.length;
+
+  return {
+    clause: ` AND (
+      name ILIKE $${idx}
+      OR surname ILIKE $${idx}
+      OR phone ILIKE $${idx}
+      OR phone2 ILIKE $${idx}
+      OR address ILIKE $${idx}
+      OR TRIM(CONCAT(name, ' ', COALESCE(surname, ''))) ILIKE $${idx}
+    )`,
+    params,
+  };
+}
+
+function parsePaginationQuery(query) {
+  const page = Math.max(1, parseInt(query.page, 10) || 1);
+  let limit = parseInt(query.limit, 10) || 20;
+  limit = Math.min(100, Math.max(1, limit));
+  const offset = (page - 1) * limit;
+  return { page, limit, offset };
+}
+
+function mapCustomerListRow(row) {
+  const mapped = mapCustomerRow(row);
+  return {
+    id: mapped.id,
+    name: mapped.name,
+    surname: mapped.surname,
+    display_name: mapped.display_name,
+    phone: mapped.phone,
+    phone2: mapped.phone2,
+    address: mapped.address,
+    price: mapped.price,
+    active_bidons: mapped.active_bidons,
+    debt: mapped.debt,
+  };
+}
 
 async function findCustomerByNormalizedPhone(normalized, companyId, excludeId = null) {
   if (!normalized) return null;
@@ -143,11 +190,33 @@ router.get('/export', authorizeRole(['admin']), async (req, res) => {
 
 router.get('/', async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT * FROM customers WHERE company_id = $1 ${CUSTOMER_LIST_ORDER}`,
-      [req.user.company_id]
+    const companyId = req.user.company_id;
+    const { page, limit, offset } = parsePaginationQuery(req.query);
+    const params = [companyId];
+    const search = buildCustomerSearchClause(req.query.q, params);
+
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS total
+       FROM customers
+       WHERE company_id = $1${search.clause}`,
+      search.params
     );
-    res.json(result.rows.map(mapCustomerRow));
+
+    const listParams = [...search.params, limit, offset];
+    const result = await pool.query(
+      `SELECT * FROM customers
+       WHERE company_id = $1${search.clause}
+       ${CUSTOMER_LIST_ORDER}
+       LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
+      listParams
+    );
+
+    res.json({
+      customers: result.rows.map(mapCustomerListRow),
+      total: countResult.rows[0].total,
+      page,
+      limit,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

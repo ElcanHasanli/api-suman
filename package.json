@@ -21,6 +21,7 @@
     "db:migrate:customer-inactivity": "node scripts/db-migrate-customer-inactivity-alerts.js",
     "db:migrate:expense-source": "node scripts/db-migrate-expense-source.js",
     "import:whatsapp": "node scripts/import-whatsapp-customers.js",
+    "db:purge-customers-only": "node scripts/db-purge-except-customers.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
