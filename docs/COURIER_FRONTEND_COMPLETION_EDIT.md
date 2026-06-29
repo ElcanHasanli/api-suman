@@ -28,7 +28,7 @@ Hər sifarişdə (kuryer):
 PUT /api/orders/:id/complete
 ```
 
-Body (əvvəlki kimi):
+Body:
 ```json
 {
   "payment_type": "cash",
@@ -38,6 +38,11 @@ Body (əvvəlki kimi):
   "notes": ""
 }
 ```
+
+- `amount_paid` — müştərinin **faktiki** ödədiyi məbləğ (AZN)
+- Göndərilməsə: `credit` → `0`, `cash`/`card` → tam `price`
+- `amount_paid < price` → fərq müştəri borcuna yazılır (`remaining_amount`, `is_paid: false`)
+- Ətraflı: `docs/COURIER_FRONTEND_PARTIAL_PAYMENT.md`
 
 ## Redaktə (24 saat ərzində)
 
@@ -65,7 +70,8 @@ Authorization: Bearer <courier_token>
 | HTTP | `code` | Mənası |
 |------|--------|--------|
 | 403 | `EDIT_WINDOW_EXPIRED` | 24 saat bitib |
-| 403 | `ORDER_LOCKED` | Nişə sifarişi admin artıq ödənilib qeyd edib |
+| 400 | `ORDER_ALREADY_PAID` | Sifariş tam ödənilib (redaktə bağlı) |
+| 400 | `AMOUNT_EXCEEDS_ORDER` | `amount_paid` qiymətdən böyükdür |
 | 404 | — | Sifariş yoxdur / kuryer üçün görünmür |
 
 ## UI tövsiyəsi

@@ -1,13 +1,23 @@
 import pool from '../config/database.js';
 
-function paymentStatusOnComplete(payment_type) {
-  const isPaid = payment_type === 'cash' || payment_type === 'card';
+/** Sifariş qiyməti ilə ödənilən arasındakı fərq — müştəri borcuna əlavə olunur. */
+export function unpaidOrderAmount(orderPrice, amountPaid) {
+  return Math.max(0, Number(orderPrice) - Number(amountPaid ?? 0));
+}
+
+function paymentStatusOnComplete(payment_type, orderPrice, amountPaid) {
+  const unpaid = unpaidOrderAmount(orderPrice, amountPaid);
+
+  if (payment_type === 'credit') {
+    return { is_paid: false, paid_at: null };
+  }
+
+  const isPaid = unpaid === 0;
   return { is_paid: isPaid, paid_at: isPaid ? new Date() : null };
 }
 
-function creditDebtDelta(payment_type, orderPrice, amountPaid) {
-  if (payment_type !== 'credit') return 0;
-  return Math.max(0, Number(orderPrice) - Number(amountPaid ?? 0));
+function debtDeltaOnComplete(orderPrice, amountPaid) {
+  return unpaidOrderAmount(orderPrice, amountPaid);
 }
 
 /**
@@ -16,11 +26,7 @@ function creditDebtDelta(payment_type, orderPrice, amountPaid) {
 function revertCustomerCompletion(client, order) {
   const given = Number(order.full_bidons_given ?? order.bidons_count ?? 0);
   const emptyReturned = Number(order.empty_bidons_returned) || 0;
-  const debtDelta = creditDebtDelta(
-    order.payment_type,
-    order.price,
-    order.amount_paid
-  );
+  const debtDelta = debtDeltaOnComplete(order.price, order.amount_paid);
 
   return client.query(
     `UPDATE customers
@@ -42,7 +48,7 @@ function applyCustomerCompletion(client, order, {
   const given = Number(full_bidons_given ?? order.bidons_count ?? 1);
   const emptyReturned = Number(empty_bidons_returned) || 0;
   const orderPrice = Number(price ?? order.price);
-  const debtDelta = creditDebtDelta(payment_type, orderPrice, amount_paid);
+  const debtDelta = debtDeltaOnComplete(orderPrice, amount_paid);
 
   return client.query(
     `UPDATE customers
@@ -85,9 +91,15 @@ export async function completeOrder(orderId, {
     }
 
     const given = full_bidons_given ?? order.bidons_count;
-    const paid = amount_paid != null ? Number(amount_paid) : Number(order.price);
+    const orderPrice = Number(order.price);
+    const paid =
+      amount_paid != null
+        ? Number(amount_paid)
+        : payment_type === 'credit'
+          ? 0
+          : orderPrice;
     const emptyReturned = Number(empty_bidons_returned) || 0;
-    const { is_paid, paid_at } = paymentStatusOnComplete(payment_type);
+    const { is_paid, paid_at } = paymentStatusOnComplete(payment_type, orderPrice, paid);
 
     const updatedOrder = await client.query(
       `UPDATE orders
@@ -167,10 +179,10 @@ export async function updateCompletedOrder(orderId, courierId, {
       );
     }
 
-    if (order.payment_type === 'credit' && order.is_paid) {
+    if (order.is_paid) {
       throw Object.assign(
-        new Error('Credit order already marked paid by admin'),
-        { status: 403, code: 'ORDER_LOCKED' }
+        new Error('Order is already fully paid'),
+        { status: 400, code: 'ORDER_ALREADY_PAID' }
       );
     }
 
@@ -186,7 +198,7 @@ export async function updateCompletedOrder(orderId, courierId, {
         ? Number(order.amount_paid ?? 0)
         : newPrice;
     const emptyReturned = Number(empty_bidons_returned ?? order.empty_bidons_returned) || 0;
-    const { is_paid, paid_at } = paymentStatusOnComplete(payment_type);
+    const { is_paid, paid_at } = paymentStatusOnComplete(payment_type, newPrice, paid);
 
     await revertCustomerCompletion(client, order);
 
@@ -235,9 +247,10 @@ export async function updateCompletedOrder(orderId, courierId, {
 }
 
 /**
- * Admin: nişə sifarişini ödənilmiş kimi qeyd edir, müştəri borcunu azaldır.
+ * Admin: sifariş üzrə borc ödənişi (tam və ya qismən).
+ * @param {number} [amount] — ödənilən məbləğ; verilməsə sifarişin qalığı tam ödənilir
  */
-export async function markOrderAsPaid(orderId) {
+export async function recordOrderPayment(orderId, { amount, recordedBy }) {
   const client = await pool.connect();
 
   try {
@@ -255,44 +268,103 @@ export async function markOrderAsPaid(orderId) {
     const order = orderResult.rows[0];
 
     if (order.status !== 'completed') {
-      throw Object.assign(new Error('Only completed orders can be marked as paid'), { status: 400 });
+      throw Object.assign(new Error('Only completed orders can receive payment'), {
+        status: 400,
+      });
     }
 
     if (order.is_paid) {
-      throw Object.assign(new Error('Order is already marked as paid'), { status: 400 });
+      throw Object.assign(new Error('Order is already fully paid'), {
+        status: 400,
+        code: 'ORDER_ALREADY_PAID',
+      });
     }
 
     const orderPrice = Number(order.price);
     const amountPaid = Number(order.amount_paid ?? 0);
-    const debtReduction = Math.max(0, orderPrice - amountPaid);
+    const orderRemaining = unpaidOrderAmount(orderPrice, amountPaid);
 
-    const updatedOrder = await client.query(
-      `UPDATE orders
-       SET is_paid = TRUE,
-           paid_at = NOW(),
-           updated_at = NOW()
-       WHERE id = $1
-       RETURNING *`,
-      [orderId]
-    );
+    if (orderRemaining <= 0) {
+      throw Object.assign(new Error('Order has no remaining balance'), { status: 400 });
+    }
 
-    if (debtReduction > 0) {
-      await client.query(
-        `UPDATE customers
-         SET debt = GREATEST(0, debt - $1),
-             updated_at = NOW()
-         WHERE id = $2`,
-        [debtReduction, order.customer_id]
+    const payAmount =
+      amount != null && amount !== '' ? Number(amount) : orderRemaining;
+
+    if (!Number.isFinite(payAmount) || payAmount <= 0) {
+      throw Object.assign(new Error('Payment amount must be greater than 0'), { status: 400 });
+    }
+
+    if (payAmount > orderRemaining + 0.001) {
+      throw Object.assign(
+        new Error(`Payment cannot exceed order remaining (${orderRemaining} AZN)`),
+        { status: 400, code: 'AMOUNT_EXCEEDS_ORDER' }
       );
     }
 
+    const customerResult = await client.query(
+      'SELECT id, debt FROM customers WHERE id = $1 FOR UPDATE',
+      [order.customer_id]
+    );
+
+    if (!customerResult.rows.length) {
+      throw Object.assign(new Error('Customer not found'), { status: 404 });
+    }
+
+    const previousDebt = Number(customerResult.rows[0].debt);
+    const newAmountPaid = amountPaid + payAmount;
+    const isFullyPaid = newAmountPaid >= orderPrice - 0.001;
+
+    const updatedOrder = await client.query(
+      `UPDATE orders
+       SET amount_paid = $1,
+           is_paid = $2,
+           paid_at = CASE WHEN $2 THEN NOW() ELSE paid_at END,
+           updated_at = NOW()
+       WHERE id = $3
+       RETURNING *`,
+      [newAmountPaid, isFullyPaid, orderId]
+    );
+
+    const newDebt = Math.max(0, previousDebt - payAmount);
+    await client.query(
+      `UPDATE customers
+       SET debt = $1,
+           updated_at = NOW()
+       WHERE id = $2`,
+      [newDebt, order.customer_id]
+    );
+
+    let debtPayment = null;
+    if (recordedBy) {
+      const dp = await client.query(
+        `INSERT INTO debt_payments (company_id, customer_id, amount, previous_debt, new_debt, recorded_by)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+        [order.company_id, order.customer_id, payAmount, previousDebt, newDebt, recordedBy]
+      );
+      debtPayment = dp.rows[0];
+    }
+
     await client.query('COMMIT');
-    return updatedOrder.rows[0];
+
+    return {
+      order: updatedOrder.rows[0],
+      debt_payment: debtPayment,
+      customer_debt: newDebt,
+      paid_amount: payAmount,
+      order_remaining: unpaidOrderAmount(orderPrice, newAmountPaid),
+    };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;
   } finally {
     client.release();
   }
+}
+
+/** @deprecated recordOrderPayment istifadə edin */
+export async function markOrderAsPaid(orderId, options = {}) {
+  const result = await recordOrderPayment(orderId, options);
+  return result.order;
 }
 

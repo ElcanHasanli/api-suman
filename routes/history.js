@@ -5,9 +5,18 @@ import { buildCompletedOrdersFilter, COMPLETED_ORDER_SELECT } from '../utils/his
 import { buildDateFilter } from '../utils/periodFilter.js';
 import { buildExcelBuffer, sendExcel } from '../utils/excel.js';
 import { formatExpenseRow } from '../utils/expenseFormat.js';
+import { unpaidOrderAmount } from '../utils/orderCompletion.js';
 const router = express.Router();
 
 router.use(authenticateToken, requireTenant, authorizeRole(['admin']));
+
+function mapHistoryOrder(row) {
+  return {
+    ...row,
+    remaining_amount: unpaidOrderAmount(row.price, row.amount_paid),
+    customer_debt: row.customer_debt != null ? Number(row.customer_debt) : null,
+  };
+}
 
 function summarizeOrders(rows) {
   const summary = {
@@ -37,7 +46,15 @@ function summarizeOrders(rows) {
         summary.creditRevenue += orderPrice;
       } else {
         summary.unpaidCreditOrders += 1;
-        summary.unpaidCreditAmount += Math.max(0, orderPrice - amountPaid);
+        summary.unpaidCreditAmount += unpaidOrderAmount(orderPrice, amountPaid);
+      }
+    }
+
+    if (!row.is_paid) {
+      const remaining = unpaidOrderAmount(orderPrice, amountPaid);
+      if (remaining > 0 && row.payment_type !== 'credit') {
+        summary.unpaidCreditOrders += 1;
+        summary.unpaidCreditAmount += remaining;
       }
     }
   }
@@ -129,7 +146,7 @@ router.get('/', async (req, res) => {
       startDate: startDate ?? null,
       endDate: endDate ?? null,
       summary,
-      orders,
+      orders: orders.map(mapHistoryOrder),
       expenses,
       debtPayments,
     });

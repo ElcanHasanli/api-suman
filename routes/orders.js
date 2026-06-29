@@ -7,7 +7,12 @@ import {
   requireTenant,
 } from '../middleware/auth.js';
 import { assertSameCompany } from '../middleware/tenant.js';
-import { completeOrder, markOrderAsPaid, updateCompletedOrder } from '../utils/orderCompletion.js';
+import {
+  completeOrder,
+  recordOrderPayment,
+  updateCompletedOrder,
+  unpaidOrderAmount,
+} from '../utils/orderCompletion.js';
 import { notifyCourierOnAssign } from '../lib/notifyCourier.js';
 import {
   notifyAdminsOrderCompleted,
@@ -35,6 +40,16 @@ const orderListSelect = `
   LEFT JOIN customers c ON o.customer_id = c.id
   LEFT JOIN users u ON o.courier_id = u.id
 `;
+
+function enrichOrderRow(order, user = null) {
+  if (!order) return order;
+  const row = {
+    ...order,
+    remaining_amount: unpaidOrderAmount(order.price, order.amount_paid),
+    customer_debt: order.debt != null ? Number(order.debt) : undefined,
+  };
+  return user?.role === 'courier' ? enrichOrderForUser(row, user) : row;
+}
 
 function enrichOrderForUser(order, user) {
   if (!order || user?.role !== 'courier') return order;
@@ -66,7 +81,7 @@ async function getOrderById(id, companyId, user = null) {
 
   const result = await pool.query(query, params);
   const row = result.rows[0] ?? null;
-  return row ? enrichOrderForUser(row, user) : null;
+  return row ? enrichOrderRow(row, user) : null;
 }
 
 async function assertCourierInCompany(courierId, companyId) {
@@ -123,7 +138,7 @@ router.get('/', async (req, res) => {
 
     const result = await pool.query(query, params);
     const rows = req.user.role === 'courier'
-      ? result.rows.map((r) => enrichOrderForUser(r, req.user))
+      ? result.rows.map((r) => enrichOrderRow(r, req.user))
       : result.rows;
     res.json(rows);
   } catch (err) {
@@ -166,7 +181,7 @@ router.get('/courier/:courierId', authorizeCourierSelf('courierId'), async (req,
       req.user.company_id,
     ]);
     const rows = req.user.role === 'courier'
-      ? result.rows.map((r) => enrichOrderForUser(r, req.user))
+      ? result.rows.map((r) => enrichOrderRow(r, req.user))
       : result.rows;
     res.json(rows);
   } catch (err) {
@@ -452,10 +467,24 @@ router.put('/:id/mark-paid', authorizeRole(['admin']), async (req, res) => {
     const existing = await getOrderById(req.params.id, req.user.company_id);
     if (!existing) return res.status(404).json({ error: 'Order not found' });
 
-    const order = await markOrderAsPaid(req.params.id);
-    res.json(await getOrderById(order.id, req.user.company_id));
+    const { amount } = req.body;
+    const result = await recordOrderPayment(req.params.id, {
+      amount,
+      recordedBy: req.user.id,
+    });
+
+    res.json({
+      order: await getOrderById(result.order.id, req.user.company_id),
+      debt_payment: result.debt_payment,
+      customer_debt: result.customer_debt,
+      paid_amount: result.paid_amount,
+      order_remaining: result.order_remaining,
+    });
   } catch (err) {
-    res.status(err.status || 500).json({ error: err.message });
+    res.status(err.status || 500).json({
+      error: err.message,
+      code: err.code ?? undefined,
+    });
   }
 });
 
@@ -516,9 +545,27 @@ router.put('/:id/complete', authorizeRole(['courier', 'admin']), async (req, res
       return res.status(400).json({ error: 'payment_type must be cash, card, or credit' });
     }
 
+    const orderPrice = Number(existing.price);
+    const paid =
+      amount_paid != null
+        ? Number(amount_paid)
+        : payment_type === 'credit'
+          ? 0
+          : orderPrice;
+
+    if (!Number.isFinite(paid) || paid < 0) {
+      return res.status(400).json({ error: 'amount_paid must be a non-negative number' });
+    }
+    if (paid > orderPrice + 0.001) {
+      return res.status(400).json({
+        error: `amount_paid cannot exceed order price (${orderPrice} AZN)`,
+        code: 'AMOUNT_EXCEEDS_ORDER',
+      });
+    }
+
     const order = await completeOrder(req.params.id, {
       payment_type,
-      amount_paid: amount_paid ?? (payment_type === 'credit' ? 0 : existing.price),
+      amount_paid: paid,
       empty_bidons_returned,
       full_bidons_given: full_bidons_given ?? existing.full_bidons_given ?? existing.bidons_count,
       notes,

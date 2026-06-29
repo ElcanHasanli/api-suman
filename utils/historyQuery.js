@@ -36,6 +36,7 @@ export const COMPLETED_ORDER_SELECT = `
          c.name AS customer_name,
          c.surname AS customer_surname,
          c.phone AS customer_phone,
+         c.debt AS customer_debt,
          u.name AS courier_name
   FROM orders o
   LEFT JOIN customers c ON o.customer_id = c.id

@@ -35,6 +35,6 @@ export function isWithinCourierEditWindow(completedAt) {
 export function canCourierEditCompletion(order) {
   if (!order || order.status !== 'completed') return false;
   if (!isWithinCourierEditWindow(order.completed_at)) return false;
-  if (order.payment_type === 'credit' && order.is_paid) return false;
+  if (order.is_paid) return false;
   return true;
 }
