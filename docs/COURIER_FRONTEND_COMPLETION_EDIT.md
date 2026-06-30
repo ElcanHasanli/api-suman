@@ -66,13 +66,17 @@ Authorization: Bearer <courier_token>
 - `price` — səhv qiymət düzəlişi üçün
 - `completed_at` dəyişmir (24 saat həmin vaxtdan hesablanır)
 
-**Xətalar:**
+**Xətalar (kuryer):**
+
 | HTTP | `code` | Mənası |
 |------|--------|--------|
-| 403 | `EDIT_WINDOW_EXPIRED` | 24 saat bitib |
-| 400 | `ORDER_ALREADY_PAID` | Sifariş tam ödənilib (redaktə bağlı) |
-| 400 | `AMOUNT_EXCEEDS_ORDER` | `amount_paid` qiymətdən böyükdür |
-| 404 | — | Sifariş yoxdur / kuryer üçün görünmür |
+| 404 | `ORDER_NOT_FOUND` | Sifariş yoxdur (şirkət daxilində) |
+| 404 | `ORDER_NOT_VISIBLE` | Köhnə / bu gün deyil / 24 saat keçib — görünmür |
+| 403 | `NOT_YOUR_ORDER` | Başqa kuryerə təyin olunub |
+| 403 | `ORDER_ALREADY_PAID` | Tam ödənilib — redaktə bağlı |
+| 403 | `EDIT_WINDOW_EXPIRED` | 24 saat bitib — redaktə bağlı |
+
+`GET /api/orders/:id` — tamamlanmış sifariş **24 saat ərzində** görünür (`is_paid` olsa belə); yalnız `courier_editable: false` olur.
 
 ## UI tövsiyəsi
 

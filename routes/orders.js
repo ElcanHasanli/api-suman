@@ -6,7 +6,6 @@ import {
   authorizeCourierSelf,
   requireTenant,
 } from '../middleware/auth.js';
-import { assertSameCompany } from '../middleware/tenant.js';
 import {
   completeOrder,
   recordOrderPayment,
@@ -25,6 +24,7 @@ import {
   courierVisibleOrdersClause,
   canCourierEditCompletion,
   COURIER_COMPLETION_EDIT_HOURS,
+  resolveCourierOrderAccess,
 } from '../utils/bakuDate.js';
 
 const router = express.Router();
@@ -69,6 +69,14 @@ function enrichOrderForUser(order, user) {
   };
 }
 
+async function fetchOrderById(id, companyId) {
+  const result = await pool.query(
+    `${orderListSelect} WHERE o.id = $1 AND o.company_id = $2`,
+    [id, companyId]
+  );
+  return result.rows[0] ?? null;
+}
+
 async function getOrderById(id, companyId, user = null) {
   let query = `${orderListSelect} WHERE o.id = $1 AND o.company_id = $2`;
   const params = [id, companyId];
@@ -93,20 +101,12 @@ async function assertCourierInCompany(courierId, companyId) {
   return r.rows.length > 0;
 }
 
-function assertCourierOrderAccess(req, order) {
-  if (!order || !assertSameCompany(req.user, order.company_id)) return false;
-  if (req.user.role === 'admin') return true;
-  if (req.user.role !== 'courier' || order.courier_id !== req.user.id) return false;
+function respondCourierAccess(res, access) {
+  return res.status(access.status).json({ error: access.error, code: access.code });
+}
 
-  if (['assigned', 'in_progress'].includes(order.status)) {
-    if (!order.assigned_at) return false;
-  }
-
-  if (order.status === 'completed' && !canCourierEditCompletion(order)) {
-    return false;
-  }
-
-  return true;
+function checkCourierAccess(user, order, options = {}) {
+  return resolveCourierOrderAccess(user, order, options);
 }
 
 router.get('/', async (req, res) => {
@@ -254,10 +254,11 @@ async function getOrderNotes(orderId, companyId) {
 
 router.get('/:id/notes', async (req, res) => {
   try {
-    const order = await getOrderById(req.params.id, req.user.company_id, req.user);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (!assertCourierOrderAccess(req, order)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
+    const order = await fetchOrderById(req.params.id, req.user.company_id);
+    if (!order) return res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
+    if (req.user.role === 'courier') {
+      const access = checkCourierAccess(req.user, order);
+      if (!access.allowed) return respondCourierAccess(res, access);
     }
     const notes = await getOrderNotes(req.params.id, req.user.company_id);
     res.json(notes);
@@ -268,10 +269,11 @@ router.get('/:id/notes', async (req, res) => {
 
 router.post('/:id/notes', authorizeRole(['admin', 'courier']), async (req, res) => {
   try {
-    const order = await getOrderById(req.params.id, req.user.company_id, req.user);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (!assertCourierOrderAccess(req, order)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
+    const order = await fetchOrderById(req.params.id, req.user.company_id);
+    if (!order) return res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
+    if (req.user.role === 'courier') {
+      const access = checkCourierAccess(req.user, order);
+      if (!access.allowed) return respondCourierAccess(res, access);
     }
 
     const { body: noteBody } = req.body;
@@ -308,13 +310,14 @@ router.post('/:id/notes', authorizeRole(['admin', 'courier']), async (req, res) 
 
 router.get('/:id', async (req, res) => {
   try {
-    const order = await getOrderById(req.params.id, req.user.company_id, req.user);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (!assertCourierOrderAccess(req, order)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
+    const order = await fetchOrderById(req.params.id, req.user.company_id);
+    if (!order) return res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
+    if (req.user.role === 'courier') {
+      const access = checkCourierAccess(req.user, order);
+      if (!access.allowed) return respondCourierAccess(res, access);
     }
     const notes = await getOrderNotes(req.params.id, req.user.company_id);
-    res.json({ ...order, notes });
+    res.json({ ...enrichOrderRow(order, req.user), notes });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -508,10 +511,11 @@ router.put('/:id/done', authorizeRole(['admin']), async (req, res) => {
 
 router.put('/:id/start', authorizeRole(['courier', 'admin']), async (req, res) => {
   try {
-    const existing = await getOrderById(req.params.id, req.user.company_id, req.user);
-    if (!existing) return res.status(404).json({ error: 'Order not found' });
-    if (!assertCourierOrderAccess(req, existing)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
+    const existing = await fetchOrderById(req.params.id, req.user.company_id);
+    if (!existing) return res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
+    if (req.user.role === 'courier') {
+      const access = checkCourierAccess(req.user, existing);
+      if (!access.allowed) return respondCourierAccess(res, access);
     }
 
     const result = await pool.query(
@@ -533,10 +537,11 @@ router.put('/:id/start', authorizeRole(['courier', 'admin']), async (req, res) =
 
 router.put('/:id/complete', authorizeRole(['courier', 'admin']), async (req, res) => {
   try {
-    const existing = await getOrderById(req.params.id, req.user.company_id, req.user);
-    if (!existing) return res.status(404).json({ error: 'Order not found' });
-    if (!assertCourierOrderAccess(req, existing)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
+    const existing = await fetchOrderById(req.params.id, req.user.company_id);
+    if (!existing) return res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
+    if (req.user.role === 'courier') {
+      const access = checkCourierAccess(req.user, existing);
+      if (!access.allowed) return respondCourierAccess(res, access);
     }
 
     const { payment_type, amount_paid, empty_bidons_returned, full_bidons_given, notes } = req.body;
@@ -587,17 +592,11 @@ router.put('/:id/complete', authorizeRole(['courier', 'admin']), async (req, res
 
 router.patch('/:id/completion', authorizeRole(['courier']), async (req, res) => {
   try {
-    const existing = await getOrderById(req.params.id, req.user.company_id, req.user);
-    if (!existing) return res.status(404).json({ error: 'Order not found' });
-    if (!assertCourierOrderAccess(req, existing)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
-    }
-    if (!canCourierEditCompletion(existing)) {
-      return res.status(403).json({
-        error: 'Completion edit window expired or order locked',
-        code: 'EDIT_WINDOW_EXPIRED',
-      });
-    }
+    const existing = await fetchOrderById(req.params.id, req.user.company_id);
+    if (!existing) return res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
+
+    const access = checkCourierAccess(req.user, existing, { requireEditable: true });
+    if (!access.allowed) return respondCourierAccess(res, access);
 
     const {
       payment_type,
