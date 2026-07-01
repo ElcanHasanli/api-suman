@@ -19,6 +19,3 @@ export function parsePhoneFields(phone) {
   if (!normalized) return null;
   return { display, normalized };
 }
-
-export const DUPLICATE_PHONE_ERROR =
-  'Bu telefon nömrəsi artıq başqa müştəriyə aid edilib';

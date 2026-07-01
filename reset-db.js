@@ -83,9 +83,10 @@ async function createSchema(client) {
       active_bidons INT DEFAULT 0,
       debt DECIMAL(10, 2) DEFAULT 0,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE (company_id, phone_normalized)
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE INDEX IF NOT EXISTS idx_customers_phone_norm ON customers(company_id, phone_normalized);
 
     CREATE TABLE expenses (
       id SERIAL PRIMARY KEY,

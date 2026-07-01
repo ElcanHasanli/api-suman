@@ -20,6 +20,7 @@
     "db:migrate:assigned-at": "node scripts/db-migrate-assigned-at.js",
     "db:migrate:customer-inactivity": "node scripts/db-migrate-customer-inactivity-alerts.js",
     "db:migrate:expense-source": "node scripts/db-migrate-expense-source.js",
+    "db:migrate:allow-duplicate-phone": "node scripts/db-migrate-allow-duplicate-phone.js",
     "import:whatsapp": "node scripts/import-whatsapp-customers.js",
     "db:purge-customers-only": "node scripts/db-purge-except-customers.js",
     "test": "echo \"Error: no test specified\" && exit 1"

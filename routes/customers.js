@@ -2,7 +2,7 @@ import express from 'express';
 import pool from '../config/database.js';
 import { authenticateToken, authorizeRole, requireTenant } from '../middleware/auth.js';
 import { buildExcelBuffer, sendExcel } from '../utils/excel.js';
-import { parsePhoneFields, normalizePhone, DUPLICATE_PHONE_ERROR } from '../utils/phone.js';
+import { parsePhoneFields } from '../utils/phone.js';
 import { parseCustomerName, formatCustomerDisplay } from '../utils/customerName.js';
 
 const router = express.Router();
@@ -127,28 +127,7 @@ function mapCustomerListRow(row) {
   };
 }
 
-async function findCustomerByNormalizedPhone(normalized, companyId, excludeId = null) {
-  if (!normalized) return null;
-
-  const query = excludeId
-    ? `SELECT id FROM customers
-       WHERE company_id = $2 AND id != $3
-         AND (phone_normalized = $1 OR phone2_normalized = $1)`
-    : `SELECT id FROM customers
-       WHERE company_id = $2 AND (phone_normalized = $1 OR phone2_normalized = $1)`;
-
-  const params = excludeId
-    ? [normalized, companyId, excludeId]
-    : [normalized, companyId];
-
-  const result = await pool.query(query, params);
-  return result.rows[0] ?? null;
-}
-
 function handleCustomerError(res, err) {
-  if (err.code === '23505') {
-    return res.status(409).json({ error: DUPLICATE_PHONE_ERROR });
-  }
   return res.status(500).json({ error: err.message });
 }
 
@@ -256,24 +235,6 @@ router.post('/', authorizeRole(['admin']), async (req, res) => {
       }
     }
 
-    const duplicate = await findCustomerByNormalizedPhone(
-      phone1.normalized,
-      req.user.company_id
-    );
-    if (duplicate) {
-      return res.status(409).json({ error: DUPLICATE_PHONE_ERROR });
-    }
-
-    if (phone2Fields) {
-      const dup2 = await findCustomerByNormalizedPhone(
-        phone2Fields.normalized,
-        req.user.company_id
-      );
-      if (dup2) {
-        return res.status(409).json({ error: DUPLICATE_PHONE_ERROR });
-      }
-    }
-
     const result = await pool.query(
       `INSERT INTO customers (
          company_id, name, surname, phone, phone_normalized, phone2, phone2_normalized,
@@ -322,14 +283,6 @@ router.put('/:id', authorizeRole(['admin']), async (req, res) => {
       if (!p) return res.status(400).json({ error: 'Invalid phone number' });
       phoneDisplay = p.display;
       phoneNorm = p.normalized;
-      const duplicate = await findCustomerByNormalizedPhone(
-        phoneNorm,
-        req.user.company_id,
-        req.params.id
-      );
-      if (duplicate) {
-        return res.status(409).json({ error: DUPLICATE_PHONE_ERROR });
-      }
     }
 
     let phone2Display = row.phone2;
@@ -343,14 +296,6 @@ router.put('/:id', authorizeRole(['admin']), async (req, res) => {
         if (!p2) return res.status(400).json({ error: 'Invalid phone2' });
         phone2Display = p2.display;
         phone2Norm = p2.normalized;
-        const dup2 = await findCustomerByNormalizedPhone(
-          phone2Norm,
-          req.user.company_id,
-          req.params.id
-        );
-        if (dup2) {
-          return res.status(409).json({ error: DUPLICATE_PHONE_ERROR });
-        }
       }
     }
 
