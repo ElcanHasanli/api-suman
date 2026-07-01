@@ -5,6 +5,25 @@ export function unpaidOrderAmount(orderPrice, amountPaid) {
   return Math.max(0, Number(orderPrice) - Number(amountPaid ?? 0));
 }
 
+/** Sifariş yaradılarkən 1 bidon üçün qiymət. */
+export function orderUnitPrice(order) {
+  const baseBidons =
+    Number(order.full_bidons_given ?? order.bidons_count ?? 1) || 1;
+  return Number(order.price) / baseBidons;
+}
+
+/** Bidon sayına görə qiymət; explicit price verilsə onu saxlayır. */
+export function resolveOrderPrice(order, fullBidonsGiven, explicitPrice = null) {
+  if (explicitPrice != null && explicitPrice !== '') {
+    return Number(explicitPrice);
+  }
+  const given =
+    Number(fullBidonsGiven ?? order.full_bidons_given ?? order.bidons_count ?? 1) ||
+    1;
+  const unit = orderUnitPrice(order);
+  return Number((given * unit).toFixed(2));
+}
+
 function paymentStatusOnComplete(payment_type, orderPrice, amountPaid) {
   const unpaid = unpaidOrderAmount(orderPrice, amountPaid);
 
@@ -69,6 +88,7 @@ export async function completeOrder(orderId, {
   empty_bidons_returned = 0,
   full_bidons_given,
   notes,
+  price: explicitPrice,
 }) {
   const client = await pool.connect();
 
@@ -90,8 +110,8 @@ export async function completeOrder(orderId, {
       throw Object.assign(new Error('Order already completed'), { status: 400 });
     }
 
-    const given = full_bidons_given ?? order.bidons_count;
-    const orderPrice = Number(order.price);
+    const given = Number(full_bidons_given ?? order.bidons_count ?? 1);
+    const orderPrice = resolveOrderPrice(order, given, explicitPrice);
     const paid =
       amount_paid != null
         ? Number(amount_paid)
@@ -108,14 +128,26 @@ export async function completeOrder(orderId, {
            amount_paid = $2,
            empty_bidons_returned = $3,
            full_bidons_given = $4,
-           notes = COALESCE($5, notes),
-           is_paid = $6,
-           paid_at = $7,
+           bidons_count = $4,
+           price = $5,
+           notes = COALESCE($6, notes),
+           is_paid = $7,
+           paid_at = $8,
            completed_at = NOW(),
            updated_at = NOW()
-       WHERE id = $8
+       WHERE id = $9
        RETURNING *`,
-      [payment_type, paid, emptyReturned, given, notes ?? null, is_paid, paid_at, orderId]
+      [
+        payment_type,
+        paid,
+        emptyReturned,
+        given,
+        orderPrice,
+        notes ?? null,
+        is_paid,
+        paid_at,
+        orderId,
+      ]
     );
 
     await applyCustomerCompletion(client, order, {
@@ -123,7 +155,7 @@ export async function completeOrder(orderId, {
       amount_paid: paid,
       empty_bidons_returned: emptyReturned,
       full_bidons_given: given,
-      price: order.price,
+      price: orderPrice,
     });
 
     await client.query('COMMIT');
@@ -190,13 +222,16 @@ export async function updateCompletedOrder(orderId, courierId, {
       throw Object.assign(new Error('payment_type must be cash, card, or credit'), { status: 400 });
     }
 
-    const newPrice = price != null ? Number(price) : Number(order.price);
-    const given = full_bidons_given ?? order.full_bidons_given ?? order.bidons_count;
-    const paid = amount_paid != null
-      ? Number(amount_paid)
-      : payment_type === 'credit'
-        ? Number(order.amount_paid ?? 0)
-        : newPrice;
+    const given = Number(
+      full_bidons_given ?? order.full_bidons_given ?? order.bidons_count ?? 1
+    );
+    const newPrice = resolveOrderPrice(order, given, price);
+    const paid =
+      amount_paid != null
+        ? Number(amount_paid)
+        : payment_type === 'credit'
+          ? Number(order.amount_paid ?? 0)
+          : newPrice;
     const emptyReturned = Number(empty_bidons_returned ?? order.empty_bidons_returned) || 0;
     const { is_paid, paid_at } = paymentStatusOnComplete(payment_type, newPrice, paid);
 
@@ -208,6 +243,7 @@ export async function updateCompletedOrder(orderId, courierId, {
            amount_paid = $2,
            empty_bidons_returned = $3,
            full_bidons_given = $4,
+           bidons_count = $4,
            notes = COALESCE($5, notes),
            price = $6,
            is_paid = $7,

@@ -40,7 +40,8 @@ Body:
 ```
 
 - `amount_paid` — müştərinin **faktiki** ödədiyi məbləğ (AZN)
-- Göndərilməsə: `credit` → `0`, `cash`/`card` → tam `price`
+- `full_bidons_given` — verilən bidon sayı; qiymət = (1 bidon qiyməti) × say
+- Göndərilməsə: `credit` → `0`, `cash`/`card` → tam hesablanmış `price`
 - `amount_paid < price` → fərq müştəri borcuna yazılır (`remaining_amount`, `is_paid: false`)
 - Ətraflı: `docs/COURIER_FRONTEND_PARTIAL_PAYMENT.md`
 
@@ -62,9 +63,9 @@ Authorization: Bearer <courier_token>
 }
 ```
 
-- `payment_type` mütləq (cash | card | credit)
-- `price` — səhv qiymət düzəlişi üçün
-- `completed_at` dəyişmir (24 saat həmin vaxtdan hesablanır)
+- `full_bidons_given` — verilən dolu bidon sayı; **qiymət avtomatik** hesablanır: `(sifarişdə 1 bidon qiyməti) × bidon sayı`
+- `price` — yalnız manual düzəliş üçün (göndərilməsə bidon sayına görə hesablanır)
+- `amount_paid` — nağd/kartda default yeni `price`-dır
 
 **Xətalar (kuryer):**
 

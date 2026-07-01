@@ -101,6 +101,30 @@ async function assertCourierInCompany(courierId, companyId) {
   return r.rows.length > 0;
 }
 
+async function applyAdminCourierFilter(query, params, courierIdRaw, companyId) {
+  if (courierIdRaw == null || courierIdRaw === '') {
+    return query;
+  }
+
+  const value = String(courierIdRaw).trim().toLowerCase();
+  if (value === 'unassigned' || value === 'none') {
+    return `${query} AND o.courier_id IS NULL`;
+  }
+
+  const courierId = Number(courierIdRaw);
+  if (!Number.isFinite(courierId)) {
+    throw Object.assign(new Error('Invalid courier_id'), { status: 400 });
+  }
+
+  const ok = await assertCourierInCompany(courierId, companyId);
+  if (!ok) {
+    throw Object.assign(new Error('Courier not found'), { status: 404 });
+  }
+
+  params.push(courierId);
+  return `${query} AND o.courier_id = $${params.length}`;
+}
+
 function respondCourierAccess(res, access) {
   return res.status(access.status).json({ error: access.error, code: access.code });
 }
@@ -119,9 +143,13 @@ router.get('/', async (req, res) => {
       params.push(req.user.id);
       query += ` AND o.courier_id = $${params.length}`;
       query += ` AND ${courierVisibleOrdersClause('o')}`;
-    } else if (courier_id) {
-      params.push(courier_id);
-      query += ` AND o.courier_id = $${params.length}`;
+    } else {
+      query = await applyAdminCourierFilter(
+        query,
+        params,
+        courier_id,
+        req.user.company_id
+      );
     }
 
     if (status) {
@@ -142,7 +170,7 @@ router.get('/', async (req, res) => {
       : result.rows;
     res.json(rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -417,28 +445,29 @@ router.put('/:id', authorizeRole(['admin']), async (req, res) => {
       newStatus = 'assigned';
     }
 
-    const setAssignedAt = courierChanged && newCourierId;
+    const setAssignedAt = Boolean(courierChanged && newCourierId);
+    const clearAssignedAt = courier_id !== undefined && !newCourierId;
 
     await pool.query(
       `UPDATE orders
-       SET customer_id = COALESCE($1, customer_id),
-           courier_id = $2,
-           bidons_count = COALESCE($3, bidons_count),
-           address = COALESCE($4, address),
-           price = COALESCE($5, price),
-           status = $6,
-           notes = COALESCE($7, notes),
-           full_bidons_given = COALESCE($3, full_bidons_given),
+       SET customer_id = COALESCE($1::int, customer_id),
+           courier_id = $2::int,
+           bidons_count = COALESCE($3::int, bidons_count),
+           address = COALESCE($4::text, address),
+           price = COALESCE($5::numeric, price),
+           status = $6::varchar,
+           notes = COALESCE($7::text, notes),
+           full_bidons_given = COALESCE($3::int, full_bidons_given),
            assigned_at = CASE
-             WHEN $10 THEN NOW()
-             WHEN $2 IS NULL THEN NULL
+             WHEN $10::boolean THEN NOW()
+             WHEN $11::boolean THEN NULL
              ELSE assigned_at
            END,
            updated_at = NOW()
-       WHERE id = $8 AND company_id = $9`,
+       WHERE id = $8::int AND company_id = $9::int`,
       [
         customer_id ?? null,
-        newCourierId,
+        newCourierId ?? null,
         bidons_count ?? null,
         address ?? null,
         price ?? null,
@@ -447,6 +476,7 @@ router.put('/:id', authorizeRole(['admin']), async (req, res) => {
         req.params.id,
         req.user.company_id,
         setAssignedAt,
+        clearAssignedAt,
       ]
     );
 

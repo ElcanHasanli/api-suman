@@ -136,13 +136,17 @@ router.get('/search', async (req, res) => {
     const q = (req.query.q || '').trim();
     if (!q) return res.json([]);
 
-    const pattern = `%${q}%`;
+    const params = [req.user.company_id];
+    const search = buildCustomerSearchClause(q, params);
+    const patternIdx = params.length;
+
     const result = await pool.query(
       `SELECT * FROM customers
-       WHERE company_id = $2
-         AND (name ILIKE $1 OR surname ILIKE $1 OR phone ILIKE $1 OR phone2 ILIKE $1)
-       ORDER BY name ASC, surname ASC NULLS LAST LIMIT 20`,
-      [pattern, req.user.company_id]
+       WHERE company_id = $1${search.clause}
+       ORDER BY (address ILIKE $${patternIdx}) DESC,
+         name ASC, surname ASC NULLS LAST, id ASC
+       LIMIT 20`,
+      search.params
     );
     res.json(result.rows.map(mapCustomerRow));
   } catch (err) {

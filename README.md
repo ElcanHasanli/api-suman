@@ -93,7 +93,7 @@ npm run db:seed
 
 ### Müştərilər (admin CRUD)
 - `GET /api/customers` — siyahı
-- `GET /api/customers/search?q=` — axtarış (sifariş yaradarkən)
+- `GET /api/customers/search?q=` — sifariş yaradarkən axtarış: ad, telefon, **ünvan** (ünvan uyğunluqları əvvəl)
 - `GET /api/customers/export` — Excel
 - `POST /api/customers` — `{ name, surname?, phone, address, price?, active_bidons?, debt? }`
 - `PUT /api/customers/:id`

@@ -146,7 +146,7 @@ Header: `Authorization: Bearer <token>`
 |--------|-----|
 | GET | `/api/customers` — elifba sırası (name, surname) |
 | GET | `/api/customers/:id` — detal + sifariş/borc tarixçəsi |
-| GET | `/api/customers/search?q=` |
+| GET | `/api/customers/search?q=` — ad, telefon, ünvan (`ILIKE`); ünvan uyğunluqları birinci |
 | GET | `/api/customers/export` (blob) |
 | POST | `/api/customers` |
 | PUT | `/api/customers/:id` |
