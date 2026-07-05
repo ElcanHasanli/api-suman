@@ -4,6 +4,7 @@ import { authenticateToken, authorizeRole, requireTenant } from '../middleware/a
 import { buildExcelBuffer, sendExcel } from '../utils/excel.js';
 import { parsePhoneFields } from '../utils/phone.js';
 import { parseCustomerName, formatCustomerDisplay } from '../utils/customerName.js';
+import { fetchCustomerLastNote } from '../utils/customerDebt.js';
 
 const router = express.Router();
 
@@ -199,6 +200,36 @@ router.get('/', async (req, res) => {
       total: countResult.rows[0].total,
       page,
       limit,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/:id/order-preview', authorizeRole(['admin']), async (req, res) => {
+  try {
+    const customerResult = await pool.query(
+      'SELECT * FROM customers WHERE id = $1 AND company_id = $2',
+      [req.params.id, req.user.company_id]
+    );
+    if (!customerResult.rows.length) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+
+    const customer = mapCustomerRow(customerResult.rows[0]);
+    const last_note = await fetchCustomerLastNote(req.params.id, req.user.company_id);
+
+    res.json({
+      customer: {
+        id: customer.id,
+        display_name: customer.display_name,
+        phone: customer.phone,
+        address: customer.address,
+        price: customer.price,
+        active_bidons: customer.active_bidons,
+        debt: customer.debt,
+      },
+      last_note,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -1,4 +1,5 @@
 import pool from '../config/database.js';
+import { isPickupOrder } from './orderTypes.js';
 
 /** Sifariş qiyməti ilə ödənilən arasındakı fərq — müştəri borcuna əlavə olunur. */
 export function unpaidOrderAmount(orderPrice, amountPaid) {
@@ -80,6 +81,48 @@ function applyCustomerCompletion(client, order, {
 }
 
 /**
+ * Boş bidon götürmə sifarişini tamamlayır.
+ */
+async function completePickupOrderInternal(client, order, { empty_bidons_returned, notes }) {
+  const returned = Number(empty_bidons_returned);
+  if (!Number.isFinite(returned) || returned < 0) {
+    throw Object.assign(new Error('empty_bidons_returned must be a non-negative number'), {
+      status: 400,
+    });
+  }
+
+  const updatedOrder = await client.query(
+    `UPDATE orders
+     SET status = 'completed',
+         empty_bidons_returned = $1,
+         full_bidons_given = 0,
+         amount_paid = 0,
+         price = 0,
+         payment_type = 'pickup',
+         is_paid = TRUE,
+         paid_at = NOW(),
+         notes = COALESCE($2, notes),
+         completed_at = NOW(),
+         updated_at = NOW()
+     WHERE id = $3
+     RETURNING *`,
+    [returned, notes ?? null, order.id]
+  );
+
+  if (returned > 0) {
+    await client.query(
+      `UPDATE customers
+       SET active_bidons = GREATEST(0, active_bidons - $1),
+           updated_at = NOW()
+       WHERE id = $2`,
+      [returned, order.customer_id]
+    );
+  }
+
+  return updatedOrder.rows[0];
+}
+
+/**
  * Completes an order: updates payment/bottles, customer debt & active bidons.
  */
 export async function completeOrder(orderId, {
@@ -108,6 +151,15 @@ export async function completeOrder(orderId, {
 
     if (order.status === 'completed') {
       throw Object.assign(new Error('Order already completed'), { status: 400 });
+    }
+
+    if (isPickupOrder(order)) {
+      const completed = await completePickupOrderInternal(client, order, {
+        empty_bidons_returned,
+        notes,
+      });
+      await client.query('COMMIT');
+      return completed;
     }
 
     const given = Number(full_bidons_given ?? order.bidons_count ?? 1);
@@ -211,11 +263,31 @@ export async function updateCompletedOrder(orderId, courierId, {
       );
     }
 
-    if (order.is_paid) {
+    if (order.is_paid && !isPickupOrder(order)) {
       throw Object.assign(
         new Error('Order is already fully paid'),
         { status: 400, code: 'ORDER_ALREADY_PAID' }
       );
+    }
+
+    if (isPickupOrder(order)) {
+      const revertedReturned = Number(order.empty_bidons_returned) || 0;
+      if (revertedReturned > 0) {
+        await client.query(
+          `UPDATE customers
+           SET active_bidons = active_bidons + $1,
+               updated_at = NOW()
+           WHERE id = $2`,
+          [revertedReturned, order.customer_id]
+        );
+      }
+
+      const completed = await completePickupOrderInternal(client, order, {
+        empty_bidons_returned,
+        notes,
+      });
+      await client.query('COMMIT');
+      return completed;
     }
 
     if (!payment_type || !['cash', 'card', 'credit'].includes(payment_type)) {

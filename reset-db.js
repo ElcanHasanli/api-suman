@@ -106,6 +106,8 @@ async function createSchema(client) {
       customer_id INT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
       courier_id INT REFERENCES users(id) ON DELETE SET NULL,
       assigned_at TIMESTAMPTZ,
+      scheduled_date DATE NOT NULL DEFAULT (NOW() AT TIME ZONE 'Asia/Baku')::date,
+      order_type VARCHAR(20) NOT NULL DEFAULT 'delivery',
       bidons_count INT DEFAULT 1,
       address TEXT NOT NULL,
       price DECIMAL(10, 2) NOT NULL,

@@ -1,6 +1,11 @@
 /** Bu günün tarixi (Asia/Baku) — CURRENT_DATE əvəzinə */
 export const BAKU_TODAY = `(NOW() AT TIME ZONE 'Asia/Baku')::date`;
 
+/** Sifarişin icra günü (Asia/Baku) — scheduled_date və ya assigned_at */
+export function orderScheduledDateSql(alias = 'o') {
+  return `COALESCE(${alias}.scheduled_date, (${alias}.assigned_at AT TIME ZONE 'Asia/Baku')::date)`;
+}
+
 export const COURIER_COMPLETION_EDIT_HOURS = 24;
 
 /**
@@ -9,10 +14,11 @@ export const COURIER_COMPLETION_EDIT_HOURS = 24;
  * - completed: tamamlanmadan sonra 24 saat ərzində
  */
 export function courierVisibleOrdersClause(alias = 'o') {
+  const scheduledCol = orderScheduledDateSql(alias);
   return `(
     (
       ${alias}.status IN ('assigned', 'in_progress')
-      AND (${alias}.assigned_at AT TIME ZONE 'Asia/Baku')::date = ${BAKU_TODAY}
+      AND ${scheduledCol} = ${BAKU_TODAY}
     )
     OR (
       ${alias}.status = 'completed'
@@ -53,12 +59,39 @@ export function isBakuToday(dateInput) {
   return toBakuDateString(dateInput) === toBakuDateString(new Date());
 }
 
+export function orderScheduledBakuDate(order) {
+  if (!order) return null;
+  if (order.scheduled_date) {
+    const d = order.scheduled_date;
+    return typeof d === 'string' ? d.slice(0, 10) : toBakuDateString(d);
+  }
+  if (order.assigned_at) return toBakuDateString(order.assigned_at);
+  return null;
+}
+
+/** YYYY-MM-DD — default bu gün (Asia/Baku) */
+export function parseScheduledDateInput(input) {
+  if (input == null || input === '') {
+    return toBakuDateString(new Date());
+  }
+  const s = String(input).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    throw Object.assign(new Error('scheduled_date must be YYYY-MM-DD'), {
+      status: 400,
+      code: 'INVALID_SCHEDULED_DATE',
+    });
+  }
+  return s;
+}
+
 /** Kuryer panelində sifariş görünürlüyü (SQL clause ilə eyni məntiq). */
 export function isOrderVisibleToCourier(order) {
   if (!order) return false;
 
   if (['assigned', 'in_progress'].includes(order.status)) {
-    return isBakuToday(order.assigned_at);
+    const scheduled = orderScheduledBakuDate(order);
+    const today = toBakuDateString(new Date());
+    return scheduled === today;
   }
 
   if (order.status === 'completed') {
@@ -114,7 +147,10 @@ export function resolveCourierOrderAccess(user, order, { requireEditable = false
   }
 
   if (requireEditable && order.status === 'completed' && !canCourierEditCompletion(order)) {
-    const code = order.is_paid ? 'ORDER_ALREADY_PAID' : 'EDIT_WINDOW_EXPIRED';
+    const code =
+      order.is_paid && order.order_type !== 'pickup'
+        ? 'ORDER_ALREADY_PAID'
+        : 'EDIT_WINDOW_EXPIRED';
     return {
       allowed: false,
       status: 403,
@@ -132,6 +168,6 @@ export function resolveCourierOrderAccess(user, order, { requireEditable = false
 export function canCourierEditCompletion(order) {
   if (!order || order.status !== 'completed') return false;
   if (!isWithinCourierEditWindow(order.completed_at)) return false;
-  if (order.is_paid) return false;
+  if (order.is_paid && order.order_type !== 'pickup') return false;
   return true;
 }

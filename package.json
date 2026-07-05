@@ -21,6 +21,7 @@
     "db:migrate:customer-inactivity": "node scripts/db-migrate-customer-inactivity-alerts.js",
     "db:migrate:expense-source": "node scripts/db-migrate-expense-source.js",
     "db:migrate:allow-duplicate-phone": "node scripts/db-migrate-allow-duplicate-phone.js",
+    "db:migrate:order-type": "node scripts/db-migrate-order-type-scheduled.js",
     "import:whatsapp": "node scripts/import-whatsapp-customers.js",
     "db:purge-customers-only": "node scripts/db-purge-except-customers.js",
     "test": "echo \"Error: no test specified\" && exit 1"

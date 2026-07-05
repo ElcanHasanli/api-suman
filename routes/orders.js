@@ -25,7 +25,10 @@ import {
   canCourierEditCompletion,
   COURIER_COMPLETION_EDIT_HOURS,
   resolveCourierOrderAccess,
+  parseScheduledDateInput,
 } from '../utils/bakuDate.js';
+import { normalizeOrderType, isPickupOrder } from '../utils/orderTypes.js';
+import { applyCustomerDebtUpdate } from '../utils/customerDebt.js';
 
 const router = express.Router();
 
@@ -352,14 +355,28 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', authorizeRole(['admin']), async (req, res) => {
+  const client = await pool.connect();
   try {
-    const { customer_id, courier_id, bidons_count, address, price, notes } = req.body;
+    const {
+      customer_id,
+      courier_id,
+      bidons_count,
+      address,
+      price,
+      notes,
+      order_type,
+      scheduled_date,
+      debt,
+    } = req.body;
 
     if (!customer_id) {
       return res.status(400).json({ error: 'Customer ID required' });
     }
 
-    const customer = await pool.query(
+    const type = normalizeOrderType(order_type);
+    const scheduled = parseScheduledDateInput(scheduled_date);
+
+    const customer = await client.query(
       'SELECT * FROM customers WHERE id = $1 AND company_id = $2',
       [customer_id, req.user.company_id]
     );
@@ -376,26 +393,45 @@ router.post('/', authorizeRole(['admin']), async (req, res) => {
 
     const customerData = customer.rows[0];
     const status = courier_id ? 'assigned' : 'pending';
+    const finalBidons = bidons_count ?? 1;
+    const isPickup = type === 'pickup';
+    const finalPrice = isPickup ? 0 : Number(price ?? customerData.price ?? 0);
+    const fullBidonsGiven = isPickup ? 0 : finalBidons;
 
-    const result = await pool.query(
+    await client.query('BEGIN');
+
+    if (debt !== undefined && debt !== null && debt !== '') {
+      await applyCustomerDebtUpdate(client, {
+        companyId: req.user.company_id,
+        customerId: customer_id,
+        newDebt: debt,
+        recordedBy: req.user.id,
+      });
+    }
+
+    const result = await client.query(
       `INSERT INTO orders (
          company_id, customer_id, courier_id, bidons_count, address, price,
-         status, notes, full_bidons_given, assigned_at
+         status, notes, full_bidons_given, assigned_at, order_type, scheduled_date
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::date) RETURNING *`,
       [
         req.user.company_id,
         customer_id,
         courier_id || null,
-        bidons_count ?? 1,
+        finalBidons,
         address || customerData.address,
-        price ?? customerData.price,
+        finalPrice,
         status,
         notes ?? null,
-        bidons_count ?? 1,
+        fullBidonsGiven,
         courier_id ? new Date() : null,
+        type,
+        scheduled,
       ]
     );
+
+    await client.query('COMMIT');
 
     const order = result.rows[0];
 
@@ -410,7 +446,13 @@ router.post('/', authorizeRole(['admin']), async (req, res) => {
 
     res.status(201).json(await getOrderById(order.id, req.user.company_id));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    await client.query('ROLLBACK');
+    res.status(err.status || 500).json({
+      error: err.message,
+      code: err.code ?? undefined,
+    });
+  } finally {
+    client.release();
   }
 });
 
@@ -419,7 +461,7 @@ router.put('/:id', authorizeRole(['admin']), async (req, res) => {
     const existing = await getOrderById(req.params.id, req.user.company_id);
     if (!existing) return res.status(404).json({ error: 'Order not found' });
 
-    const { customer_id, courier_id, bidons_count, address, price, status, notes } = req.body;
+    const { customer_id, courier_id, bidons_count, address, price, status, notes, scheduled_date, order_type } = req.body;
 
     if (customer_id) {
       const c = await pool.query(
@@ -448,6 +490,38 @@ router.put('/:id', authorizeRole(['admin']), async (req, res) => {
     const setAssignedAt = Boolean(courierChanged && newCourierId);
     const clearAssignedAt = courier_id !== undefined && !newCourierId;
 
+    let scheduledDateClause = '';
+    const updateParams = [
+      customer_id ?? null,
+      newCourierId ?? null,
+      bidons_count ?? null,
+      address ?? null,
+      price ?? null,
+      newStatus,
+      notes ?? null,
+      req.params.id,
+      req.user.company_id,
+      setAssignedAt,
+      clearAssignedAt,
+    ];
+
+    if (scheduled_date !== undefined) {
+      const scheduled = parseScheduledDateInput(scheduled_date);
+      updateParams.push(scheduled);
+      scheduledDateClause = `, scheduled_date = $${updateParams.length}::date`;
+    }
+
+    let orderTypeClause = '';
+    if (order_type !== undefined) {
+      const type = normalizeOrderType(order_type);
+      updateParams.push(type);
+      orderTypeClause = `, order_type = $${updateParams.length}`;
+      if (type === 'pickup') {
+        updateParams.push(0);
+        orderTypeClause += `, price = $${updateParams.length}, full_bidons_given = 0`;
+      }
+    }
+
     await pool.query(
       `UPDATE orders
        SET customer_id = COALESCE($1::int, customer_id),
@@ -462,22 +536,10 @@ router.put('/:id', authorizeRole(['admin']), async (req, res) => {
              WHEN $10::boolean THEN NOW()
              WHEN $11::boolean THEN NULL
              ELSE assigned_at
-           END,
+           END${scheduledDateClause}${orderTypeClause},
            updated_at = NOW()
        WHERE id = $8::int AND company_id = $9::int`,
-      [
-        customer_id ?? null,
-        newCourierId ?? null,
-        bidons_count ?? null,
-        address ?? null,
-        price ?? null,
-        newStatus,
-        notes ?? null,
-        req.params.id,
-        req.user.company_id,
-        setAssignedAt,
-        clearAssignedAt,
-      ]
+      updateParams
     );
 
     if (courierChanged && newCourierId) {
@@ -574,6 +636,24 @@ router.put('/:id/complete', authorizeRole(['courier', 'admin']), async (req, res
       if (!access.allowed) return respondCourierAccess(res, access);
     }
 
+    if (isPickupOrder(existing)) {
+      const { empty_bidons_returned, notes } = req.body;
+      const order = await completeOrder(req.params.id, {
+        empty_bidons_returned,
+        notes,
+      });
+
+      if (req.user.role === 'courier') {
+        notifyAdminsOrderCompleted(
+          req.user.company_id,
+          order.id,
+          req.user.id
+        ).catch(() => {});
+      }
+
+      return res.json(await getOrderById(order.id, req.user.company_id, req.user));
+    }
+
     const { payment_type, amount_paid, empty_bidons_returned, full_bidons_given, notes } = req.body;
 
     if (!payment_type || !['cash', 'card', 'credit'].includes(payment_type)) {
@@ -627,6 +707,14 @@ router.patch('/:id/completion', authorizeRole(['courier']), async (req, res) => 
 
     const access = checkCourierAccess(req.user, existing, { requireEditable: true });
     if (!access.allowed) return respondCourierAccess(res, access);
+
+    if (isPickupOrder(existing)) {
+      const order = await updateCompletedOrder(req.params.id, req.user.id, {
+        empty_bidons_returned: req.body.empty_bidons_returned,
+        notes: req.body.notes,
+      });
+      return res.json(await getOrderById(order.id, req.user.company_id, req.user));
+    }
 
     const {
       payment_type,
