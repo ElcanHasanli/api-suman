@@ -114,25 +114,38 @@ Telefon DB-də normallaşdırılır (`050...` → `994...`). UI-da istədiyiniz 
 {
   "summary": {
     "totalOrders": 10,
-    "totalRevenue": 150.5,
-    "cashRevenue": 100,
-    "cardRevenue": 30.5,
-    "creditRevenue": 20,
+    "cashRevenue": 30,
+    "cardRevenue": 20,
+    "creditRevenue": 0,
+    "orderRevenue": 50,
+    "salesRevenue": 50,
+    "debtCollected": 0,
+    "totalRevenue": 50,
+    "totalExpenses": 10,
+    "netRevenue": 40,
     "unpaidCreditOrders": 2,
     "unpaidCreditAmount": 45
-  },
-  "orders": [ ... ]
+  }
 }
 ```
 
-**Hesablama qaydası (dəqiq göstərin):**
-- `cashRevenue` — nağd sifarişlərin `amount_paid` cəmi
-- `cardRevenue` — kart sifarişlərin `amount_paid` cəmi
-- `creditRevenue` — nişə + **`is_paid === true`** olanların **`price`** cəmi
-- `unpaidCreditAmount` — nişə + **`is_paid === false`** → borc (`price - amount_paid`)
-- **`totalRevenue` = cashRevenue + cardRevenue + creditRevenue** (həmişə)
+**Hesablama:**
+| Sahə | Formula |
+|------|---------|
+| `cashRevenue` | Nağd sifarişlərin `amount_paid` cəmi |
+| `cardRevenue` | Kart sifarişlərin `amount_paid` cəmi |
+| `creditRevenue` | Ödənilmiş nişə sifarişlərin `price` cəmi |
+| `orderRevenue` / `salesRevenue` | nağd + kart + nişə (**satılan su**) |
+| `debtCollected` | Həmin gün toplanan borc ödənişləri |
+| `totalRevenue` | `orderRevenue + debtCollected` (**ümumi daxilolma**) |
+| `totalExpenses` | Kuryer + admin xərcləri (yanacaq və s.) |
+| **`netRevenue`** | **`totalRevenue − totalExpenses`** (**xalis gəlir**) |
 
-Ödənilməmiş nişə **`totalRevenue`-ə daxil deyil**.
+**UI:** «Xalis gəlir» kartında **`summary.netRevenue`** göstərin — xərcləri ayrıca toplamayın.
+
+Nümunə: satış 50 AZN, yanacaq 10 AZN → `netRevenue: 40`.
+
+Ödənilməmiş nişə / qismən ödəniş **`orderRevenue`-ə daxil deyil** (`unpaidCreditAmount`-da).
 
 ---
 

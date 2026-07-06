@@ -31,6 +31,7 @@ function summarizeOrders(rows) {
     unpaidCreditOrders: 0,
     unpaidCreditAmount: 0,
     orderRevenue: 0,
+    salesRevenue: 0,
     debtCollected: 0,
     totalRevenue: 0,
     totalExpenses: 0,
@@ -67,6 +68,22 @@ function summarizeOrders(rows) {
     summary.cashRevenue + summary.cardRevenue + summary.creditRevenue;
 
   return summary;
+}
+
+function buildFullSummary(orderSummary, expenses, debtPayments) {
+  const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
+  const debtCollected = debtPayments.reduce((s, d) => s + Number(d.amount), 0);
+
+  orderSummary.debtCollected = debtCollected;
+  /** Satış gəliri: nağd + kart + ödənilmiş nişə (tamamlanmış sifarişlər) */
+  orderSummary.salesRevenue = orderSummary.orderRevenue;
+  /** Ümumi daxilolma: satış + toplanmış borc ödənişləri */
+  orderSummary.totalRevenue = orderSummary.orderRevenue + debtCollected;
+  orderSummary.totalExpenses = totalExpenses;
+  /** Xalis gəlir = ümumi daxilolma − bütün xərclər (kuryer + admin) */
+  orderSummary.netRevenue = orderSummary.totalRevenue - totalExpenses;
+
+  return orderSummary;
 }
 
 async function fetchHistoryOrders(period, startDate, endDate, companyId) {
@@ -107,18 +124,6 @@ async function fetchDebtPayments(period, startDate, endDate, companyId) {
   query += df.clause + ' ORDER BY dp.created_at DESC';
   const result = await pool.query(query, df.params);
   return result.rows;
-}
-
-function buildFullSummary(orderSummary, expenses, debtPayments) {
-  const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
-  const debtCollected = debtPayments.reduce((s, d) => s + Number(d.amount), 0);
-
-  orderSummary.debtCollected = debtCollected;
-  orderSummary.totalRevenue = orderSummary.orderRevenue + debtCollected;
-  orderSummary.totalExpenses = totalExpenses;
-  orderSummary.netRevenue = orderSummary.totalRevenue - totalExpenses;
-
-  return orderSummary;
 }
 
 const historyColumns = [
