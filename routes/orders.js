@@ -26,6 +26,8 @@ import {
   COURIER_COMPLETION_EDIT_HOURS,
   resolveCourierOrderAccess,
   parseScheduledDateInput,
+  normalizeDateOnly,
+  toBakuDateTimeString,
 } from '../utils/bakuDate.js';
 import { normalizeOrderType, isPickupOrder } from '../utils/orderTypes.js';
 import { applyCustomerDebtUpdate } from '../utils/customerDebt.js';
@@ -48,6 +50,13 @@ function enrichOrderRow(order, user = null) {
   if (!order) return order;
   const row = {
     ...order,
+    scheduled_date: normalizeDateOnly(order.scheduled_date),
+    assigned_at_baku: order.assigned_at
+      ? toBakuDateTimeString(order.assigned_at)
+      : null,
+    completed_at_baku: order.completed_at
+      ? toBakuDateTimeString(order.completed_at)
+      : null,
     remaining_amount: unpaidOrderAmount(order.price, order.amount_paid),
     customer_debt: order.debt != null ? Number(order.debt) : undefined,
   };
@@ -168,9 +177,7 @@ router.get('/', async (req, res) => {
     query += ' ORDER BY o.created_at DESC';
 
     const result = await pool.query(query, params);
-    const rows = req.user.role === 'courier'
-      ? result.rows.map((r) => enrichOrderRow(r, req.user))
-      : result.rows;
+    const rows = result.rows.map((r) => enrichOrderRow(r, req.user.role === 'courier' ? req.user : null));
     res.json(rows);
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
@@ -211,9 +218,9 @@ router.get('/courier/:courierId', authorizeCourierSelf('courierId'), async (req,
       req.params.courierId,
       req.user.company_id,
     ]);
-    const rows = req.user.role === 'courier'
-      ? result.rows.map((r) => enrichOrderRow(r, req.user))
-      : result.rows;
+    const rows = result.rows.map((r) =>
+      enrichOrderRow(r, req.user.role === 'courier' ? req.user : null)
+    );
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });

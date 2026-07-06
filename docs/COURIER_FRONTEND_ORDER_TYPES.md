@@ -16,7 +16,9 @@ Sabaha planlanmış sifariş bu gün **görünmür** — sabah avtomatik çıxı
 | `delivery` | Su çatdırılması (mövcud tamamlama formu) |
 | `pickup` | **Boş bidon götürmə** — badge/ikon ilə fərqləndirin |
 
-Sifariş cavabında: `order_type`, `scheduled_date`.
+Sifariş cavabında: `order_type`, `scheduled_date` (`YYYY-MM-DD` string).
+
+**Tarix/vaxt:** `scheduled_date` — calendar gün (məs. `"2026-07-06"`). Saat üçün `assigned_at_baku` istifadə edin; `assigned_at` UTC-dir.
 
 ## Boş bidon götürmə — tamamlama
 

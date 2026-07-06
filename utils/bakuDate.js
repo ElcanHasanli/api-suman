@@ -59,6 +59,32 @@ export function isBakuToday(dateInput) {
   return toBakuDateString(dateInput) === toBakuDateString(new Date());
 }
 
+/** API cavabı üçün calendar date (DATE və ya ISO string) */
+export function normalizeDateOnly(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'string') {
+    return value.includes('T') ? value.slice(0, 10) : value;
+  }
+  return toBakuDateString(value);
+}
+
+/** Timestamp → Asia/Baku oxunaqlı vaxt (frontend üçün) */
+export function toBakuDateTimeString(dateInput) {
+  if (!dateInput) return null;
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Baku',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date(dateInput));
+
+  const get = (type) => parts.find((p) => p.type === type)?.value ?? '';
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:00+04:00`;
+}
+
 export function orderScheduledBakuDate(order) {
   if (!order) return null;
   if (order.scheduled_date) {

@@ -6,6 +6,7 @@ import { buildDateFilter } from '../utils/periodFilter.js';
 import { buildExcelBuffer, sendExcel } from '../utils/excel.js';
 import { formatExpenseRow } from '../utils/expenseFormat.js';
 import { unpaidOrderAmount } from '../utils/orderCompletion.js';
+import { normalizeDateOnly, toBakuDateTimeString } from '../utils/bakuDate.js';
 const router = express.Router();
 
 router.use(authenticateToken, requireTenant, authorizeRole(['admin']));
@@ -13,6 +14,9 @@ router.use(authenticateToken, requireTenant, authorizeRole(['admin']));
 function mapHistoryOrder(row) {
   return {
     ...row,
+    scheduled_date: normalizeDateOnly(row.scheduled_date),
+    assigned_at_baku: row.assigned_at ? toBakuDateTimeString(row.assigned_at) : null,
+    completed_at_baku: row.completed_at ? toBakuDateTimeString(row.completed_at) : null,
     remaining_amount: unpaidOrderAmount(row.price, row.amount_paid),
     customer_debt: row.customer_debt != null ? Number(row.customer_debt) : null,
   };

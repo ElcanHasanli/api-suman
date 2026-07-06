@@ -102,7 +102,9 @@ Sifariş obyektində yeni:
 | Sahə | Məna |
 |------|------|
 | `order_type` | `delivery` \| `pickup` |
-| `scheduled_date` | `2026-07-05` |
+| `scheduled_date` | `"2026-07-06"` — **yalnız tarix** (YYYY-MM-DD), timezone yoxdur |
+| `assigned_at` | UTC ISO (`2026-07-06T05:00:00.000Z`) |
+| `assigned_at_baku` | Baku vaxtı (`2026-07-06T09:00:00+04:00`) — UI-da bunu göstərin |
 
 ## UI tövsiyəsi
 
