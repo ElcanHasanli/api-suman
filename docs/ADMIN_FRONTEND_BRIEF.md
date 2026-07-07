@@ -175,7 +175,7 @@ Detal ekranı: **`docs/ADMIN_FRONTEND_CUSTOMER_DETAIL.md`**
 | GET | `/api/orders/:id` |
 | POST | `/api/orders` — `order_type`, `scheduled_date`, `debt` (müştəri borcu) |
 | GET | `/api/customers/:id/order-preview` — sifariş modalı üçün borc + son qeyd |
-| PUT | `/api/orders/:id` |
+| PUT | `/api/orders/:id` — `scheduled_date`, `order_type`, kuryer, bidon və s. |
 | PUT | `/api/orders/:id/done` |
 | PUT | `/api/orders/:id/mark-paid` |
 | DELETE | `/api/orders/:id` |

@@ -95,19 +95,23 @@ export function orderScheduledBakuDate(order) {
   return null;
 }
 
-/** YYYY-MM-DD — default bu gün (Asia/Baku) */
+/** YYYY-MM-DD — default bu gün (Asia/Baku). ISO datetime da qəbul edir. */
 export function parseScheduledDateInput(input) {
   if (input == null || input === '') {
     return toBakuDateString(new Date());
   }
   const s = String(input).trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    throw Object.assign(new Error('scheduled_date must be YYYY-MM-DD'), {
-      status: 400,
-      code: 'INVALID_SCHEDULED_DATE',
-    });
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return s;
   }
-  return s;
+  if (s.includes('T') || /^\d{4}-\d{2}-\d{2}[ T]/.test(s)) {
+    const baku = toBakuDateString(new Date(s));
+    if (baku) return baku;
+  }
+  throw Object.assign(new Error('scheduled_date must be YYYY-MM-DD'), {
+    status: 400,
+    code: 'INVALID_SCHEDULED_DATE',
+  });
 }
 
 /** Kuryer panelində sifariş görünürlüyü (SQL clause ilə eyni məntiq). */

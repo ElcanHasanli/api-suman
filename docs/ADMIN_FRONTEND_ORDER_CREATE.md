@@ -120,3 +120,30 @@ Sifariş obyektində yeni:
 npm run db:migrate:order-type
 pm2 restart api-suman
 ```
+
+---
+
+## Sifariş redaktə (admin)
+
+```http
+PUT /api/orders/:id
+Authorization: Bearer <admin>
+```
+
+```json
+{
+  "courier_id": 3,
+  "bidons_count": 2,
+  "address": "Yeni ünvan",
+  "price": 5,
+  "notes": "Qeyd",
+  "order_type": "delivery",
+  "scheduled_date": "2026-07-08"
+}
+```
+
+- `scheduled_date` — icra günü (YYYY-MM-DD və ya ISO datetime); **redaktədə də işləyir**
+- Kuryer sifarişi yalnız `scheduled_date` günü görür
+- Tamamlanmış (`completed`) sifarişdə tarix dəyişmək məsləhət deyil; API icazə verir
+
+**Frontend:** Redaktə modalında tarix picker — `PUT` body-də `scheduled_date` göndərin.

@@ -560,7 +560,10 @@ router.put('/:id', authorizeRole(['admin']), async (req, res) => {
 
     res.json(await getOrderById(req.params.id, req.user.company_id));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({
+      error: err.message,
+      code: err.code ?? undefined,
+    });
   }
 });
 
