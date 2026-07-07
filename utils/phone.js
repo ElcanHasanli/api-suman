@@ -12,6 +12,12 @@ export function normalizePhone(phone) {
   return digits;
 }
 
+/** WhatsApp mesaj linki (wa.me) */
+export function whatsAppUrl(phone) {
+  const normalized = normalizePhone(phone);
+  return normalized ? `https://wa.me/${normalized}` : null;
+}
+
 /** Inputda yazılanı saxlayır, unikal yoxlama üçün normalized qaytarır. */
 export function parsePhoneFields(phone) {
   const display = String(phone ?? '').trim();

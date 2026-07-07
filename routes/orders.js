@@ -31,6 +31,8 @@ import {
 } from '../utils/bakuDate.js';
 import { normalizeOrderType, isPickupOrder } from '../utils/orderTypes.js';
 import { applyCustomerDebtUpdate } from '../utils/customerDebt.js';
+import { whatsAppUrl } from '../utils/phone.js';
+import { formatCustomerDisplay } from '../utils/customerName.js';
 
 const router = express.Router();
 
@@ -38,7 +40,7 @@ router.use(authenticateToken, requireTenant);
 
 const orderListSelect = `
   SELECT o.*,
-         c.name, c.surname, c.phone AS customer_phone,
+         c.name, c.surname, c.phone AS customer_phone, c.phone2 AS customer_phone2,
          c.address AS customer_address, c.active_bidons, c.debt,
          u.name AS courier_name
   FROM orders o
@@ -50,6 +52,12 @@ function enrichOrderRow(order, user = null) {
   if (!order) return order;
   const row = {
     ...order,
+    customer_display_name: formatCustomerDisplay({
+      name: order.name,
+      surname: order.surname,
+    }),
+    whatsapp_url: whatsAppUrl(order.customer_phone),
+    whatsapp_url_phone2: whatsAppUrl(order.customer_phone2),
     scheduled_date: normalizeDateOnly(order.scheduled_date),
     assigned_at_baku: order.assigned_at
       ? toBakuDateTimeString(order.assigned_at)
