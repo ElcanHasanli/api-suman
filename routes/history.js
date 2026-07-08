@@ -12,6 +12,9 @@ const router = express.Router();
 router.use(authenticateToken, requireTenant, authorizeRole(['admin']));
 
 function mapHistoryOrder(row) {
+  const orderAmountPaid = Number(row.amount_paid ?? 0);
+  const debtPaidAtCompletion = Number(row.debt_paid_at_completion ?? 0);
+
   return {
     ...row,
     scheduled_date: normalizeDateOnly(row.scheduled_date),
@@ -19,6 +22,8 @@ function mapHistoryOrder(row) {
     completed_at_baku: row.completed_at ? toBakuDateTimeString(row.completed_at) : null,
     remaining_amount: unpaidOrderAmount(row.price, row.amount_paid),
     customer_debt: row.customer_debt != null ? Number(row.customer_debt) : null,
+    debt_paid_at_completion: debtPaidAtCompletion,
+    total_collected: orderAmountPaid + debtPaidAtCompletion,
   };
 }
 

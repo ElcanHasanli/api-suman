@@ -7,29 +7,36 @@ Tarixçədə **yerinə yetirilmiş** sifarişlərdə müştərinin borcu varsa, 
 Sifariş tamamlananda:
 
 ```
-qalan = max(0, qiymət - amount_paid)
+sifariş_qalığı = max(0, qiymət - amount_paid)
+yeni_borc = köhnə_borc - debt_paid_at_completion + sifariş_qalığı
 ```
 
-`qalan > 0` olduqda həmin məbləğ müştərinin ümumi borcuna (`customers.debt`) əlavə olunur — **nağd**, **kart** və **nişə** üçün eyni qayda.
+- `amount_paid` — yalnız **sifariş qiymətinə** gedən ödəniş
+- `debt_paid_at_completion` — tamamlama zamanı **köhnə borcdan** ödənilən hissə (kuryer birlikdə ödəyibsə)
 
-**Nümunə:** qiymət 3 AZN, kuryer `amount_paid: 1` göndəribsə → müştəri borcu +2 AZN, sifariş `is_paid: false`, `remaining_amount: 2`.
+**Nümunə (kuryer):** qiymət 10 AZN, köhnə borc 10 AZN, kuryer 20 AZN alıb → `amount_paid: 10`, `debt_paid_at_completion: 10`, `total_collected: 20`, `customer_debt: 0`.
 
-## Tarixçə API — yeni sahələr
+**Nümunə (qismən sifariş):** qiymət 3 AZN, `amount_paid: 1` → borc +2 AZN, `is_paid: false`, `remaining_amount: 2`.
+
+## Tarixçə API — sahələr
 
 `GET /api/history` — hər sifarişdə:
 
 | Sahə | Tip | Mənası |
 |------|-----|--------|
-| `amount_paid` | number | Sifariş üzrə indiyə qədər ödənilən |
+| `price` | number | Sifariş qiyməti |
+| `amount_paid` | number | Sifariş qiymətindən ödənilən |
+| `debt_paid_at_completion` | number | Tamamlama zamanı köhnə borcdan ödənilən |
+| `total_collected` | number | Kuryerin aldığı ümumi məbləğ (`amount_paid + debt_paid_at_completion`) |
 | `is_paid` | boolean | Sifariş tam ödənilib |
 | `remaining_amount` | number | `max(0, price - amount_paid)` |
-| `customer_debt` | number | Müştərinin ümumi borcu (AZN) |
+| `customer_debt` | number | Müştərinin cari ümumi borcu (AZN) |
 
-**«Borc ödə» düyməsi:** `remaining_amount > 0` **və** `customer_debt > 0` (və ya ən azı sifarişdə qalan var).
+**UI tövsiyəsi:** sifariş sətirində `total_collected` göstərin; `debt_paid_at_completion > 0` olduqda alt sətirdə: «Sifariş: X AZN · Borc: Y AZN».
 
-`summary.unpaidCreditAmount` — ödənilməmiş sifariş qalıqları (nişə + qismən nağd/kart).
+`summary.debtCollected` — `debt_payments` cədvəlindən (kuryer tamamlamada borc ödəyibsə və admin sonradan ödəyibsə daxildir).
 
-## Borc ödənişi
+## Borc ödənişi (admin)
 
 ```http
 PUT /api/orders/:id/mark-paid
@@ -37,13 +44,11 @@ Authorization: Bearer <admin_token>
 Content-Type: application/json
 ```
 
+Yalnız **sifariş qalığı** (`remaining_amount`) ödənilir — köhnə borc bu endpoint ilə ödənilmir (kuryer tamamlayanda və ya müştəri detalından ödənilir).
+
 ### Tam ödəniş
 
 Body boş və ya `{}` — sifarişin **qalan** məbləği tam ödənilir.
-
-```json
-{}
-```
 
 ### Qismən ödəniş
 
@@ -53,28 +58,27 @@ Body boş və ya `{}` — sifarişin **qalan** məbləği tam ödənilir.
 }
 ```
 
-- `amount` — bu dəfə ödənilən məbləğ (AZN)
 - `amount` sifarişin `remaining_amount`-dan çox ola bilməz
 - Müştəri borcu `amount` qədər azalır
-- Sifariş `amount_paid` artır; tam ödəniləndə `is_paid: true`, `paid_at` təyin olunur
 
 ### Cavab
 
 ```json
 {
-  "order": { "...": "yenilənmiş sifariş", "remaining_amount": 0, "customer_debt": 1.5 },
-  "debt_payment": { "id": 12, "amount": 3, "previous_debt": 6, "new_debt": 3, "..." },
+  "order": {
+    "price": 10,
+    "amount_paid": 10,
+    "debt_paid_at_completion": 10,
+    "total_collected": 20,
+    "remaining_amount": 0,
+    "customer_debt": 0
+  },
+  "debt_payment": { "id": 12, "amount": 3, "order_id": 5, "..." },
   "customer_debt": 3,
   "paid_amount": 3,
   "order_remaining": 0
 }
 ```
-
-| Sahə | Mənası |
-|------|--------|
-| `paid_amount` | Bu əməliyyatda ödənilən məbləğ |
-| `order_remaining` | Sifarişdə hələ qalan borc |
-| `customer_debt` | Müştərinin yeni ümumi borcu |
 
 ## Xətalar
 
@@ -82,20 +86,16 @@ Body boş və ya `{}` — sifarişin **qalan** məbləği tam ödənilir.
 |------|--------|--------|
 | 400 | `ORDER_ALREADY_PAID` | Sifariş artıq tam ödənilib |
 | 400 | `AMOUNT_EXCEEDS_ORDER` | `amount` sifariş qalığından böyükdür |
-| 400 | — | `amount` ≤ 0 və ya sifariş tamamlanmayıb |
+| 400 | `AMOUNT_EXCEEDS_PAYABLE` | Tamamlamada `amount_paid > price + customer_debt` |
 | 404 | — | Sifariş tapılmadı |
 
 ## Modal UI tövsiyəsi
 
-1. Sifariş sətirində: qiymət, `amount_paid`, `remaining_amount`, müştəri adı + `customer_debt`
-2. **«Borc ödə»** — yalnız `remaining_amount > 0` olduqda
-3. Modal:
-   - **Tam ödədi** — `PUT mark-paid` body `{}`
-   - **Qismən ödədi** — məbləğ inputu + təsdiq; `PUT mark-paid` `{ "amount": <daxil edilən> }`
-4. Uğur mesajı: «3 AZN ödənildi. Sifarişdə qalan: 0 AZN. Müştəri borcu: 3 AZN»
-5. Qismən: «2 AZN ödənildi. Sifarişdə qalan: 1 AZN. Müştəri borcu: 4 AZN»
-6. `is_paid === true` olduqda düyməni gizlət; «Ödənilib» badge
+1. Sifariş sətirində: qiymət, `amount_paid`, `debt_paid_at_completion`, `total_collected`, `remaining_amount`, `customer_debt`
+2. Kuryer birlikdə ödəyibsə: «20 AZN (sifariş 10 + borc 10)»
+3. **«Borc ödə»** — yalnız `remaining_amount > 0` olduqda (sifariş qalığı)
+4. `is_paid === true` olduqda düyməni gizlət
 
 ## Müştəri detalı
 
-`GET /api/customers/:id` — `debt_payments` siyahısında admin ödənişləri görünür (`recorded_by` ilə).
+`GET /api/customers/:id` — `debt_payments` siyahısında `order_id` ilə hansı sifarişə bağlı olduğu görünür.

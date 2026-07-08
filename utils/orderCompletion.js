@@ -6,14 +6,52 @@ export function unpaidOrderAmount(orderPrice, amountPaid) {
   return Math.max(0, Number(orderPrice) - Number(amountPaid ?? 0));
 }
 
-/** Sifariş yaradılarkən 1 bidon üçün qiymət. */
+/**
+ * Ödənişi sifariş və köhnə borc arasında bölür.
+ */
+export function splitCompletionPayment(orderPrice, amountPaid, existingDebt, payment_type) {
+  const price = Number(orderPrice);
+  const debt = Math.max(0, Number(existingDebt ?? 0));
+
+  if (payment_type === 'credit') {
+    return {
+      orderAmountPaid: 0,
+      debtPaid: 0,
+      unpaidOrder: price,
+      newCustomerDebt: debt + price,
+      isOrderPaid: false,
+      totalCollected: 0,
+    };
+  }
+
+  const paid = Math.max(0, Number(amountPaid ?? 0));
+  const orderAmountPaid = Math.min(paid, price);
+  const surplus = Math.max(0, paid - price);
+  const debtPaid = Math.min(surplus, debt);
+  const unpaidOrder = price - orderAmountPaid;
+  const newCustomerDebt = Math.max(0, debt - debtPaid + unpaidOrder);
+
+  return {
+    orderAmountPaid,
+    debtPaid,
+    unpaidOrder,
+    newCustomerDebt,
+    isOrderPaid: unpaidOrder <= 0.001,
+    totalCollected: paid,
+  };
+}
+
+export function maxCompletionPayment(orderPrice, existingDebt, payment_type) {
+  if (payment_type === 'credit') return 0;
+  return Number(orderPrice) + Math.max(0, Number(existingDebt ?? 0));
+}
+
 export function orderUnitPrice(order) {
   const baseBidons =
     Number(order.full_bidons_given ?? order.bidons_count ?? 1) || 1;
   return Number(order.price) / baseBidons;
 }
 
-/** Bidon sayına görə qiymət; explicit price verilsə onu saxlayır. */
 export function resolveOrderPrice(order, fullBidonsGiven, explicitPrice = null) {
   if (explicitPrice != null && explicitPrice !== '') {
     return Number(explicitPrice);
@@ -25,64 +63,76 @@ export function resolveOrderPrice(order, fullBidonsGiven, explicitPrice = null) 
   return Number((given * unit).toFixed(2));
 }
 
-function paymentStatusOnComplete(payment_type, orderPrice, amountPaid) {
-  const unpaid = unpaidOrderAmount(orderPrice, amountPaid);
-
-  if (payment_type === 'credit') {
-    return { is_paid: false, paid_at: null };
-  }
-
-  const isPaid = unpaid === 0;
-  return { is_paid: isPaid, paid_at: isPaid ? new Date() : null };
-}
-
-function debtDeltaOnComplete(orderPrice, amountPaid) {
-  return unpaidOrderAmount(orderPrice, amountPaid);
-}
-
-/**
- * Tamamlanmış sifarişin müştəri təsirini geri al (redaktə üçün).
- */
-function revertCustomerCompletion(client, order) {
+async function revertCustomerCompletion(client, order) {
   const given = Number(order.full_bidons_given ?? order.bidons_count ?? 0);
   const emptyReturned = Number(order.empty_bidons_returned) || 0;
-  const debtDelta = debtDeltaOnComplete(order.price, order.amount_paid);
+  const orderPrice = Number(order.price);
+  const orderPaid = Number(order.amount_paid ?? 0);
+  const debtPaid = Number(order.debt_paid_at_completion ?? 0);
+  const unpaidOrder = unpaidOrderAmount(orderPrice, orderPaid);
+  const debtRevertDelta = debtPaid - unpaidOrder;
+
+  await client.query('DELETE FROM debt_payments WHERE order_id = $1', [order.id]);
 
   return client.query(
     `UPDATE customers
      SET active_bidons = GREATEST(0, active_bidons - $1 + $2),
-         debt = GREATEST(0, debt - $3),
+         debt = GREATEST(0, debt + $3),
          updated_at = NOW()
      WHERE id = $4`,
-    [given, emptyReturned, debtDelta, order.customer_id]
+    [given, emptyReturned, debtRevertDelta, order.customer_id]
   );
 }
 
-function applyCustomerCompletion(client, order, {
+async function applyPaymentCompletion(client, order, customer, {
   payment_type,
   amount_paid,
   empty_bidons_returned,
   full_bidons_given,
   price,
+  recordedBy,
 }) {
   const given = Number(full_bidons_given ?? order.bidons_count ?? 1);
   const emptyReturned = Number(empty_bidons_returned) || 0;
   const orderPrice = Number(price ?? order.price);
-  const debtDelta = debtDeltaOnComplete(orderPrice, amount_paid);
+  const previousDebt = Number(customer.debt ?? 0);
 
-  return client.query(
+  const split = splitCompletionPayment(
+    orderPrice,
+    amount_paid,
+    previousDebt,
+    payment_type
+  );
+
+  await client.query(
     `UPDATE customers
      SET active_bidons = GREATEST(0, active_bidons + $1 - $2),
-         debt = debt + $3,
+         debt = $3,
          updated_at = NOW()
      WHERE id = $4`,
-    [given, emptyReturned, debtDelta, order.customer_id]
+    [given, emptyReturned, split.newCustomerDebt, order.customer_id]
   );
+
+  if (split.debtPaid > 0.001 && recordedBy) {
+    await client.query(
+      `INSERT INTO debt_payments (
+         company_id, customer_id, order_id, amount, previous_debt, new_debt, recorded_by
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        order.company_id,
+        order.customer_id,
+        order.id,
+        split.debtPaid,
+        previousDebt,
+        Math.max(0, previousDebt - split.debtPaid),
+        recordedBy,
+      ]
+    );
+  }
+
+  return split;
 }
 
-/**
- * Boş bidon götürmə sifarişini tamamlayır.
- */
 async function completePickupOrderInternal(client, order, { empty_bidons_returned, notes }) {
   const returned = Number(empty_bidons_returned);
   if (!Number.isFinite(returned) || returned < 0) {
@@ -97,6 +147,7 @@ async function completePickupOrderInternal(client, order, { empty_bidons_returne
          empty_bidons_returned = $1,
          full_bidons_given = 0,
          amount_paid = 0,
+         debt_paid_at_completion = 0,
          price = 0,
          payment_type = 'pickup',
          is_paid = TRUE,
@@ -122,9 +173,17 @@ async function completePickupOrderInternal(client, order, { empty_bidons_returne
   return updatedOrder.rows[0];
 }
 
-/**
- * Completes an order: updates payment/bottles, customer debt & active bidons.
- */
+async function lockCustomer(client, customerId) {
+  const r = await client.query(
+    'SELECT * FROM customers WHERE id = $1 FOR UPDATE',
+    [customerId]
+  );
+  if (!r.rows.length) {
+    throw Object.assign(new Error('Customer not found'), { status: 404 });
+  }
+  return r.rows[0];
+}
+
 export async function completeOrder(orderId, {
   payment_type,
   amount_paid,
@@ -132,6 +191,7 @@ export async function completeOrder(orderId, {
   full_bidons_given,
   notes,
   price: explicitPrice,
+  recordedBy,
 }) {
   const client = await pool.connect();
 
@@ -162,6 +222,7 @@ export async function completeOrder(orderId, {
       return completed;
     }
 
+    const customer = await lockCustomer(client, order.customer_id);
     const given = Number(full_bidons_given ?? order.bidons_count ?? 1);
     const orderPrice = resolveOrderPrice(order, given, explicitPrice);
     const paid =
@@ -170,45 +231,55 @@ export async function completeOrder(orderId, {
         : payment_type === 'credit'
           ? 0
           : orderPrice;
-    const emptyReturned = Number(empty_bidons_returned) || 0;
-    const { is_paid, paid_at } = paymentStatusOnComplete(payment_type, orderPrice, paid);
+
+    const maxPay = maxCompletionPayment(orderPrice, customer.debt, payment_type);
+    if (payment_type !== 'credit' && paid > maxPay + 0.001) {
+      throw Object.assign(
+        new Error(
+          `amount_paid cannot exceed order price + customer debt (${maxPay} AZN)`
+        ),
+        { status: 400, code: 'AMOUNT_EXCEEDS_PAYABLE' }
+      );
+    }
+
+    const split = await applyPaymentCompletion(client, order, customer, {
+      payment_type,
+      amount_paid: paid,
+      empty_bidons_returned,
+      full_bidons_given: given,
+      price: orderPrice,
+      recordedBy: recordedBy ?? order.courier_id,
+    });
 
     const updatedOrder = await client.query(
       `UPDATE orders
        SET status = 'completed',
            payment_type = $1,
            amount_paid = $2,
-           empty_bidons_returned = $3,
-           full_bidons_given = $4,
-           bidons_count = $4,
-           price = $5,
-           notes = COALESCE($6, notes),
-           is_paid = $7,
-           paid_at = $8,
+           debt_paid_at_completion = $3,
+           empty_bidons_returned = $4,
+           full_bidons_given = $5,
+           bidons_count = $5,
+           price = $6,
+           notes = COALESCE($7, notes),
+           is_paid = $8,
+           paid_at = CASE WHEN $8 THEN NOW() ELSE NULL END,
            completed_at = NOW(),
            updated_at = NOW()
        WHERE id = $9
        RETURNING *`,
       [
         payment_type,
-        paid,
-        emptyReturned,
+        split.orderAmountPaid,
+        split.debtPaid,
+        Number(empty_bidons_returned) || 0,
         given,
         orderPrice,
         notes ?? null,
-        is_paid,
-        paid_at,
+        split.isOrderPaid,
         orderId,
       ]
     );
-
-    await applyCustomerCompletion(client, order, {
-      payment_type,
-      amount_paid: paid,
-      empty_bidons_returned: emptyReturned,
-      full_bidons_given: given,
-      price: orderPrice,
-    });
 
     await client.query('COMMIT');
     return updatedOrder.rows[0];
@@ -220,9 +291,6 @@ export async function completeOrder(orderId, {
   }
 }
 
-/**
- * Kuryer: tamamlanmış sifarişi 24 saat ərzində redaktə edir.
- */
 export async function updateCompletedOrder(orderId, courierId, {
   payment_type,
   amount_paid,
@@ -294,6 +362,9 @@ export async function updateCompletedOrder(orderId, courierId, {
       throw Object.assign(new Error('payment_type must be cash, card, or credit'), { status: 400 });
     }
 
+    await revertCustomerCompletion(client, order);
+    const customer = await lockCustomer(client, order.customer_id);
+
     const given = Number(
       full_bidons_given ?? order.full_bidons_given ?? order.bidons_count ?? 1
     );
@@ -304,45 +375,53 @@ export async function updateCompletedOrder(orderId, courierId, {
         : payment_type === 'credit'
           ? Number(order.amount_paid ?? 0)
           : newPrice;
-    const emptyReturned = Number(empty_bidons_returned ?? order.empty_bidons_returned) || 0;
-    const { is_paid, paid_at } = paymentStatusOnComplete(payment_type, newPrice, paid);
 
-    await revertCustomerCompletion(client, order);
+    const maxPay = maxCompletionPayment(newPrice, customer.debt, payment_type);
+    if (payment_type !== 'credit' && paid > maxPay + 0.001) {
+      throw Object.assign(
+        new Error(
+          `amount_paid cannot exceed order price + customer debt (${maxPay} AZN)`
+        ),
+        { status: 400, code: 'AMOUNT_EXCEEDS_PAYABLE' }
+      );
+    }
+
+    const split = await applyPaymentCompletion(client, order, customer, {
+      payment_type,
+      amount_paid: paid,
+      empty_bidons_returned,
+      full_bidons_given: given,
+      price: newPrice,
+      recordedBy: courierId,
+    });
 
     const updatedOrder = await client.query(
       `UPDATE orders
        SET payment_type = $1,
            amount_paid = $2,
-           empty_bidons_returned = $3,
-           full_bidons_given = $4,
-           bidons_count = $4,
-           notes = COALESCE($5, notes),
-           price = $6,
-           is_paid = $7,
-           paid_at = $8,
+           debt_paid_at_completion = $3,
+           empty_bidons_returned = $4,
+           full_bidons_given = $5,
+           bidons_count = $5,
+           notes = COALESCE($6, notes),
+           price = $7,
+           is_paid = $8,
+           paid_at = CASE WHEN $8 THEN COALESCE(paid_at, NOW()) ELSE NULL END,
            updated_at = NOW()
        WHERE id = $9
        RETURNING *`,
       [
         payment_type,
-        paid,
-        emptyReturned,
+        split.orderAmountPaid,
+        split.debtPaid,
+        Number(empty_bidons_returned ?? order.empty_bidons_returned) || 0,
         given,
         notes ?? null,
         newPrice,
-        is_paid,
-        paid_at,
+        split.isOrderPaid,
         orderId,
       ]
     );
-
-    await applyCustomerCompletion(client, updatedOrder.rows[0], {
-      payment_type,
-      amount_paid: paid,
-      empty_bidons_returned: emptyReturned,
-      full_bidons_given: given,
-      price: newPrice,
-    });
 
     await client.query('COMMIT');
     return updatedOrder.rows[0];
@@ -354,10 +433,6 @@ export async function updateCompletedOrder(orderId, courierId, {
   }
 }
 
-/**
- * Admin: sifariş üzrə borc ödənişi (tam və ya qismən).
- * @param {number} [amount] — ödənilən məbləğ; verilməsə sifarişin qalığı tam ödənilir
- */
 export async function recordOrderPayment(orderId, { amount, recordedBy }) {
   const client = await pool.connect();
 
@@ -446,9 +521,17 @@ export async function recordOrderPayment(orderId, { amount, recordedBy }) {
     let debtPayment = null;
     if (recordedBy) {
       const dp = await client.query(
-        `INSERT INTO debt_payments (company_id, customer_id, amount, previous_debt, new_debt, recorded_by)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-        [order.company_id, order.customer_id, payAmount, previousDebt, newDebt, recordedBy]
+        `INSERT INTO debt_payments (company_id, customer_id, order_id, amount, previous_debt, new_debt, recorded_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [
+          order.company_id,
+          order.customer_id,
+          orderId,
+          payAmount,
+          previousDebt,
+          newDebt,
+          recordedBy,
+        ]
       );
       debtPayment = dp.rows[0];
     }
@@ -470,9 +553,7 @@ export async function recordOrderPayment(orderId, { amount, recordedBy }) {
   }
 }
 
-/** @deprecated recordOrderPayment istifadə edin */
 export async function markOrderAsPaid(orderId, options = {}) {
   const result = await recordOrderPayment(orderId, options);
   return result.order;
 }
-

@@ -11,6 +11,7 @@ import {
   recordOrderPayment,
   updateCompletedOrder,
   unpaidOrderAmount,
+  maxCompletionPayment,
 } from '../utils/orderCompletion.js';
 import { notifyCourierOnAssign } from '../lib/notifyCourier.js';
 import {
@@ -50,6 +51,11 @@ const orderListSelect = `
 
 function enrichOrderRow(order, user = null) {
   if (!order) return order;
+  const orderPrice = Number(order.price ?? 0);
+  const orderAmountPaid = Number(order.amount_paid ?? 0);
+  const debtPaidAtCompletion = Number(order.debt_paid_at_completion ?? 0);
+  const customerDebt = order.debt != null ? Number(order.debt) : undefined;
+
   const row = {
     ...order,
     customer_display_name: formatCustomerDisplay({
@@ -66,7 +72,13 @@ function enrichOrderRow(order, user = null) {
       ? toBakuDateTimeString(order.completed_at)
       : null,
     remaining_amount: unpaidOrderAmount(order.price, order.amount_paid),
-    customer_debt: order.debt != null ? Number(order.debt) : undefined,
+    customer_debt: customerDebt,
+    debt_paid_at_completion: debtPaidAtCompletion,
+    total_collected: orderAmountPaid + debtPaidAtCompletion,
+    max_completion_payment:
+      order.status !== 'completed' && customerDebt != null
+        ? orderPrice + customerDebt
+        : undefined,
   };
   return user?.role === 'courier' ? enrichOrderForUser(row, user) : row;
 }
@@ -612,6 +624,7 @@ router.put('/:id/done', authorizeRole(['admin']), async (req, res) => {
       empty_bidons_returned: req.body.empty_bidons_returned ?? 0,
       full_bidons_given: req.body.full_bidons_given,
       notes: req.body.notes,
+      recordedBy: req.user.id,
     });
     res.json(await getOrderById(order.id, req.user.company_id));
   } catch (err) {
@@ -679,6 +692,7 @@ router.put('/:id/complete', authorizeRole(['courier', 'admin']), async (req, res
     }
 
     const orderPrice = Number(existing.price);
+    const customerDebt = Number(existing.debt ?? 0);
     const paid =
       amount_paid != null
         ? Number(amount_paid)
@@ -689,10 +703,12 @@ router.put('/:id/complete', authorizeRole(['courier', 'admin']), async (req, res
     if (!Number.isFinite(paid) || paid < 0) {
       return res.status(400).json({ error: 'amount_paid must be a non-negative number' });
     }
-    if (paid > orderPrice + 0.001) {
+
+    const maxPay = maxCompletionPayment(orderPrice, customerDebt, payment_type);
+    if (payment_type !== 'credit' && paid > maxPay + 0.001) {
       return res.status(400).json({
-        error: `amount_paid cannot exceed order price (${orderPrice} AZN)`,
-        code: 'AMOUNT_EXCEEDS_ORDER',
+        error: `amount_paid cannot exceed order price + customer debt (${maxPay} AZN)`,
+        code: 'AMOUNT_EXCEEDS_PAYABLE',
       });
     }
 
@@ -702,6 +718,7 @@ router.put('/:id/complete', authorizeRole(['courier', 'admin']), async (req, res
       empty_bidons_returned,
       full_bidons_given: full_bidons_given ?? existing.full_bidons_given ?? existing.bidons_count,
       notes,
+      recordedBy: req.user.id,
     });
 
     if (req.user.role === 'courier') {
