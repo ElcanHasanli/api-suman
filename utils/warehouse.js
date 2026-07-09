@@ -11,7 +11,8 @@ function toInt(value, fieldName) {
 export async function getWarehouseStock(client, companyId) {
   const db = client ?? pool;
   const result = await db.query(
-    `SELECT company_id, full_count, empty_count, updated_at, updated_by
+    `SELECT company_id, full_count, empty_count, pump_count, dispenser_count,
+            updated_at, updated_by
      FROM warehouse_stock WHERE company_id = $1`,
     [companyId]
   );
@@ -22,6 +23,8 @@ export async function getWarehouseStock(client, companyId) {
     company_id: companyId,
     full_count: 0,
     empty_count: 0,
+    pump_count: 0,
+    dispenser_count: 0,
     updated_at: null,
     updated_by: null,
   };
@@ -152,11 +155,19 @@ export async function setWarehouseStockByAdmin({
   companyId,
   full_count,
   empty_count,
+  pump_count,
+  dispenser_count,
   updatedBy,
   notes = null,
 }) {
   const full = toInt(full_count, 'full_count');
   const empty = toInt(empty_count, 'empty_count');
+  const pump =
+    pump_count != null && pump_count !== '' ? toInt(pump_count, 'pump_count') : null;
+  const dispenser =
+    dispenser_count != null && dispenser_count !== ''
+      ? toInt(dispenser_count, 'dispenser_count')
+      : null;
 
   const client = await pool.connect();
 
@@ -166,6 +177,10 @@ export async function setWarehouseStockByAdmin({
     const stock = await getWarehouseStock(client, companyId);
     const prevFull = Number(stock.full_count) || 0;
     const prevEmpty = Number(stock.empty_count) || 0;
+    const prevPump = Number(stock.pump_count) || 0;
+    const prevDispenser = Number(stock.dispenser_count) || 0;
+    const nextPump = pump ?? prevPump;
+    const nextDispenser = dispenser ?? prevDispenser;
 
     await client.query(
       `INSERT INTO warehouse_updates (
@@ -185,16 +200,20 @@ export async function setWarehouseStockByAdmin({
     );
 
     const updateResult = await client.query(
-      `INSERT INTO warehouse_stock (company_id, full_count, empty_count, updated_at, updated_by)
-       VALUES ($1, $2, $3, NOW(), $4)
+      `INSERT INTO warehouse_stock (
+         company_id, full_count, empty_count, pump_count, dispenser_count, updated_at, updated_by
+       )
+       VALUES ($1, $2, $3, $4, $5, NOW(), $6)
        ON CONFLICT (company_id)
        DO UPDATE SET
          full_count = EXCLUDED.full_count,
          empty_count = EXCLUDED.empty_count,
+         pump_count = EXCLUDED.pump_count,
+         dispenser_count = EXCLUDED.dispenser_count,
          updated_at = NOW(),
          updated_by = EXCLUDED.updated_by
        RETURNING *`,
-      [companyId, full, empty, updatedBy]
+      [companyId, full, empty, nextPump, nextDispenser, updatedBy]
     );
 
     await client.query('COMMIT');

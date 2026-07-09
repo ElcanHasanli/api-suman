@@ -1,5 +1,6 @@
 import pool from '../config/database.js';
 import { isPickupOrder } from './orderTypes.js';
+import { deriveUnitPrice } from './orderExtras.js';
 
 /** Sifariş qiyməti ilə ödənilən arasındakı fərq — müştəri borcuna əlavə olunur. */
 export function unpaidOrderAmount(orderPrice, amountPaid) {
@@ -9,41 +10,53 @@ export function unpaidOrderAmount(orderPrice, amountPaid) {
 /**
  * Ödənişi sifariş və köhnə borc arasında bölür.
  */
-export function splitCompletionPayment(orderPrice, amountPaid, existingDebt, payment_type) {
+export function splitCompletionPayment(
+  orderPrice,
+  amountPaid,
+  existingDebt,
+  payment_type,
+  prepaidAmount = 0
+) {
   const price = Number(orderPrice);
   const debt = Math.max(0, Number(existingDebt ?? 0));
+  const prepaid = Math.max(0, Number(prepaidAmount ?? 0));
+  const orderDue = Math.max(0, price - prepaid);
 
   if (payment_type === 'credit') {
     return {
       orderAmountPaid: 0,
       debtPaid: 0,
-      unpaidOrder: price,
-      newCustomerDebt: debt + price,
+      unpaidOrder: orderDue,
+      newCustomerDebt: debt + orderDue,
       isOrderPaid: false,
       totalCollected: 0,
     };
   }
 
   const paid = Math.max(0, Number(amountPaid ?? 0));
-  const orderAmountPaid = Math.min(paid, price);
-  const surplus = Math.max(0, paid - price);
+  const orderAmountPaid = Math.min(paid, orderDue);
+  const surplus = Math.max(0, paid - orderDue);
   const debtPaid = Math.min(surplus, debt);
-  const unpaidOrder = price - orderAmountPaid;
+  const unpaidOrder = orderDue - orderAmountPaid;
   const newCustomerDebt = Math.max(0, debt - debtPaid + unpaidOrder);
+  const totalOrderPaid = prepaid + orderAmountPaid;
 
   return {
     orderAmountPaid,
     debtPaid,
     unpaidOrder,
     newCustomerDebt,
-    isOrderPaid: unpaidOrder <= 0.001,
+    isOrderPaid: totalOrderPaid >= price - 0.001,
     totalCollected: paid,
+    totalOrderPaid,
   };
 }
 
-export function maxCompletionPayment(orderPrice, existingDebt, payment_type) {
+export function maxCompletionPayment(orderPrice, existingDebt, payment_type, prepaidAmount = 0) {
   if (payment_type === 'credit') return 0;
-  return Number(orderPrice) + Math.max(0, Number(existingDebt ?? 0));
+  const prepaid = Math.max(0, Number(prepaidAmount ?? 0));
+  const orderDue = Math.max(0, Number(orderPrice) - prepaid);
+  return orderDue + Math.max(0, Number(existingDebt ?? 0));
 }
 
 export function orderUnitPrice(order) {
@@ -61,6 +74,14 @@ export function resolveOrderPrice(order, fullBidonsGiven, explicitPrice = null) 
     1;
   const unit = orderUnitPrice(order);
   return Number((given * unit).toFixed(2));
+}
+
+async function getOrderExtrasTotal(client, orderId) {
+  const result = await client.query(
+    'SELECT COALESCE(SUM(amount), 0) AS total FROM order_extras WHERE order_id = $1',
+    [orderId]
+  );
+  return Number(result.rows[0].total ?? 0);
 }
 
 async function revertCustomerCompletion(client, order) {
@@ -101,7 +122,8 @@ async function applyPaymentCompletion(client, order, customer, {
     orderPrice,
     amount_paid,
     previousDebt,
-    payment_type
+    payment_type,
+    order.prepaid_amount
   );
 
   await client.query(
@@ -224,15 +246,19 @@ export async function completeOrder(orderId, {
 
     const customer = await lockCustomer(client, order.customer_id);
     const given = Number(full_bidons_given ?? order.bidons_count ?? 1);
-    const orderPrice = resolveOrderPrice(order, given, explicitPrice);
+    const extrasTotal = await getOrderExtrasTotal(client, order.id);
+    const waterPrice = resolveOrderPrice(order, given, explicitPrice);
+    const orderPrice = Number((waterPrice + extrasTotal).toFixed(2));
+    const unitPrice = given > 0 ? Number((waterPrice / given).toFixed(2)) : deriveUnitPrice(order);
+    const prepaidAmount = Number(order.prepaid_amount ?? 0);
     const paid =
       amount_paid != null
         ? Number(amount_paid)
         : payment_type === 'credit'
           ? 0
-          : orderPrice;
+          : Math.max(0, orderPrice - prepaidAmount);
 
-    const maxPay = maxCompletionPayment(orderPrice, customer.debt, payment_type);
+    const maxPay = maxCompletionPayment(orderPrice, customer.debt, payment_type, prepaidAmount);
     if (payment_type !== 'credit' && paid > maxPay + 0.001) {
       throw Object.assign(
         new Error(
@@ -261,20 +287,22 @@ export async function completeOrder(orderId, {
            full_bidons_given = $5,
            bidons_count = $5,
            price = $6,
-           notes = COALESCE($7, notes),
-           is_paid = $8,
-           paid_at = CASE WHEN $8 THEN NOW() ELSE NULL END,
+           unit_price = $7,
+           notes = COALESCE($8, notes),
+           is_paid = $9,
+           paid_at = CASE WHEN $9 THEN NOW() ELSE NULL END,
            completed_at = NOW(),
            updated_at = NOW()
-       WHERE id = $9
+       WHERE id = $10
        RETURNING *`,
       [
         payment_type,
-        split.orderAmountPaid,
+        split.totalOrderPaid ?? split.orderAmountPaid + prepaidAmount,
         split.debtPaid,
         Number(empty_bidons_returned) || 0,
         given,
         orderPrice,
+        unitPrice,
         notes ?? null,
         split.isOrderPaid,
         orderId,
@@ -368,15 +396,19 @@ export async function updateCompletedOrder(orderId, courierId, {
     const given = Number(
       full_bidons_given ?? order.full_bidons_given ?? order.bidons_count ?? 1
     );
-    const newPrice = resolveOrderPrice(order, given, price);
+    const extrasTotal = await getOrderExtrasTotal(client, order.id);
+    const waterPrice = resolveOrderPrice(order, given, price);
+    const newPrice = Number((waterPrice + extrasTotal).toFixed(2));
+    const unitPrice = given > 0 ? Number((waterPrice / given).toFixed(2)) : deriveUnitPrice(order);
+    const prepaidAmount = Number(order.prepaid_amount ?? 0);
     const paid =
       amount_paid != null
         ? Number(amount_paid)
         : payment_type === 'credit'
           ? Number(order.amount_paid ?? 0)
-          : newPrice;
+          : Math.max(0, newPrice - prepaidAmount);
 
-    const maxPay = maxCompletionPayment(newPrice, customer.debt, payment_type);
+    const maxPay = maxCompletionPayment(newPrice, customer.debt, payment_type, prepaidAmount);
     if (payment_type !== 'credit' && paid > maxPay + 0.001) {
       throw Object.assign(
         new Error(
@@ -405,19 +437,21 @@ export async function updateCompletedOrder(orderId, courierId, {
            bidons_count = $5,
            notes = COALESCE($6, notes),
            price = $7,
-           is_paid = $8,
-           paid_at = CASE WHEN $8 THEN COALESCE(paid_at, NOW()) ELSE NULL END,
+           unit_price = $8,
+           is_paid = $9,
+           paid_at = CASE WHEN $9 THEN COALESCE(paid_at, NOW()) ELSE NULL END,
            updated_at = NOW()
-       WHERE id = $9
+       WHERE id = $10
        RETURNING *`,
       [
         payment_type,
-        split.orderAmountPaid,
+        split.totalOrderPaid ?? split.orderAmountPaid + prepaidAmount,
         split.debtPaid,
         Number(empty_bidons_returned ?? order.empty_bidons_returned) || 0,
         given,
         notes ?? null,
         newPrice,
+        unitPrice,
         split.isOrderPaid,
         orderId,
       ]

@@ -41,6 +41,8 @@ router.get('/summary', authorizeRole(['admin', 'courier']), async (req, res) => 
       warehouse: {
         full_count: Number(stock.full_count) || 0,
         empty_count: Number(stock.empty_count) || 0,
+        pump_count: Number(stock.pump_count) || 0,
+        dispenser_count: Number(stock.dispenser_count) || 0,
         updated_at: stock.updated_at,
         updated_by_name: updatedByName,
       },
@@ -135,7 +137,7 @@ router.post('/update', authorizeRole(['courier']), async (req, res) => {
 /** Admin: anbar sayını birbaşa düzəltmək */
 router.patch('/stock', authorizeRole(['admin']), async (req, res) => {
   try {
-    const { full_count, empty_count, notes } = req.body;
+    const { full_count, empty_count, pump_count, dispenser_count, notes } = req.body;
 
     if (full_count == null || empty_count == null) {
       return res.status(400).json({ error: 'full_count and empty_count required' });
@@ -145,6 +147,8 @@ router.patch('/stock', authorizeRole(['admin']), async (req, res) => {
       companyId: req.user.company_id,
       full_count,
       empty_count,
+      pump_count,
+      dispenser_count,
       updatedBy: req.user.id,
       notes,
     });

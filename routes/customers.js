@@ -4,7 +4,7 @@ import { authenticateToken, authorizeRole, requireTenant } from '../middleware/a
 import { buildExcelBuffer, sendExcel } from '../utils/excel.js';
 import { parsePhoneFields } from '../utils/phone.js';
 import { parseCustomerName, formatCustomerDisplay } from '../utils/customerName.js';
-import { fetchCustomerLastNote } from '../utils/customerDebt.js';
+import { fetchCustomerLastNote, applyCustomerDebtUpdate } from '../utils/customerDebt.js';
 
 const router = express.Router();
 
@@ -203,6 +203,106 @@ router.get('/', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/debtors', authorizeRole(['admin']), async (req, res) => {
+  try {
+    const companyId = req.user.company_id;
+    const { page, limit, offset } = parsePaginationQuery(req.query);
+    const params = [companyId];
+    const search = buildCustomerSearchClause(req.query.q, params);
+
+    const countResult = await pool.query(
+      `SELECT COUNT(*)::int AS total
+       FROM customers
+       WHERE company_id = $1 AND debt > 0${search.clause}`,
+      search.params
+    );
+
+    const listParams = [...search.params, limit, offset];
+    const result = await pool.query(
+      `SELECT * FROM customers
+       WHERE company_id = $1 AND debt > 0${search.clause}
+       ORDER BY debt DESC, LOWER(TRIM(CONCAT(name, ' ', COALESCE(surname, '')))) ASC
+       LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
+      listParams
+    );
+
+    res.json({
+      customers: result.rows.map(mapCustomerListRow),
+      total: countResult.rows[0].total,
+      total_debt: result.rows.reduce((sum, row) => sum + Number(row.debt ?? 0), 0),
+      page,
+      limit,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/pay-debt', authorizeRole(['admin']), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { amount } = req.body;
+    const customerId = req.params.id;
+    const companyId = req.user.company_id;
+
+    await client.query('BEGIN');
+
+    const existing = await client.query(
+      'SELECT id, debt FROM customers WHERE id = $1 AND company_id = $2 FOR UPDATE',
+      [customerId, companyId]
+    );
+    if (!existing.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+
+    const currentDebt = Number(existing.rows[0].debt ?? 0);
+    if (currentDebt <= 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Customer has no debt', code: 'NO_DEBT' });
+    }
+
+    const payAmount =
+      amount != null && amount !== '' ? Number(amount) : currentDebt;
+
+    if (!Number.isFinite(payAmount) || payAmount <= 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Payment amount must be greater than 0' });
+    }
+
+    if (payAmount > currentDebt + 0.001) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: `Payment cannot exceed customer debt (${currentDebt} AZN)`,
+        code: 'AMOUNT_EXCEEDS_DEBT',
+      });
+    }
+
+    const newDebt = Number((currentDebt - payAmount).toFixed(2));
+    const result = await applyCustomerDebtUpdate(client, {
+      companyId,
+      customerId,
+      newDebt,
+      recordedBy: req.user.id,
+    });
+
+    await client.query('COMMIT');
+
+    res.json({
+      customer_id: Number(customerId),
+      paid_amount: payAmount,
+      previous_debt: currentDebt,
+      customer_debt: newDebt,
+      debt_payment: result.debtPayment,
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(err.status || 500).json({ error: err.message, code: err.code ?? undefined });
+  } finally {
+    client.release();
   }
 });
 

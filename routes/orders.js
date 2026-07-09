@@ -15,6 +15,15 @@ import {
 } from '../utils/orderCompletion.js';
 import { notifyCourierOnAssign } from '../lib/notifyCourier.js';
 import {
+  parseExtrasInput,
+  sumExtrasAmount,
+  fetchOrderExtras,
+  insertOrderExtras,
+  replaceOrderExtras,
+  adjustWarehouseForExtras,
+  formatExtraRow,
+} from '../utils/orderExtras.js';
+import {
   notifyAdminsOrderCompleted,
   notifyAdminsOrderNote,
 } from '../lib/notifyAdmins.js';
@@ -49,12 +58,23 @@ const orderListSelect = `
   LEFT JOIN users u ON o.courier_id = u.id
 `;
 
+async function attachExtrasToOrders(orders, companyId) {
+  const ids = orders.map((o) => o.id);
+  const extrasMap = await fetchOrderExtras(ids, companyId);
+  return orders.map((order) => ({
+    ...order,
+    extras: extrasMap.get(order.id) ?? [],
+  }));
+}
+
 function enrichOrderRow(order, user = null) {
   if (!order) return order;
   const orderPrice = Number(order.price ?? 0);
   const orderAmountPaid = Number(order.amount_paid ?? 0);
   const debtPaidAtCompletion = Number(order.debt_paid_at_completion ?? 0);
   const customerDebt = order.debt != null ? Number(order.debt) : undefined;
+  const prepaidAmount = Number(order.prepaid_amount ?? 0);
+  const orderDue = Math.max(0, orderPrice - prepaidAmount);
 
   const row = {
     ...order,
@@ -71,13 +91,19 @@ function enrichOrderRow(order, user = null) {
     completed_at_baku: order.completed_at
       ? toBakuDateTimeString(order.completed_at)
       : null,
-    remaining_amount: unpaidOrderAmount(order.price, order.amount_paid),
+    remaining_amount: unpaidOrderAmount(orderPrice, orderAmountPaid),
     customer_debt: customerDebt,
     debt_paid_at_completion: debtPaidAtCompletion,
     total_collected: orderAmountPaid + debtPaidAtCompletion,
+    is_prepaid: Boolean(order.is_prepaid),
+    prepaid_amount: prepaidAmount,
+    unit_price: order.unit_price != null ? Number(order.unit_price) : undefined,
+    extras: (order.extras ?? []).map((item) =>
+      item.label ? item : formatExtraRow(item)
+    ),
     max_completion_payment:
       order.status !== 'completed' && customerDebt != null
-        ? orderPrice + customerDebt
+        ? orderDue + customerDebt
         : undefined,
   };
   return user?.role === 'courier' ? enrichOrderForUser(row, user) : row;
@@ -121,7 +147,9 @@ async function getOrderById(id, companyId, user = null) {
 
   const result = await pool.query(query, params);
   const row = result.rows[0] ?? null;
-  return row ? enrichOrderRow(row, user) : null;
+  if (!row) return null;
+  const [withExtras] = await attachExtrasToOrders([row], companyId);
+  return enrichOrderRow(withExtras, user);
 }
 
 async function assertCourierInCompany(courierId, companyId) {
@@ -197,7 +225,10 @@ router.get('/', async (req, res) => {
     query += ' ORDER BY o.created_at DESC';
 
     const result = await pool.query(query, params);
-    const rows = result.rows.map((r) => enrichOrderRow(r, req.user.role === 'courier' ? req.user : null));
+    const withExtras = await attachExtrasToOrders(result.rows, req.user.company_id);
+    const rows = withExtras.map((r) =>
+      enrichOrderRow(r, req.user.role === 'courier' ? req.user : null)
+    );
     res.json(rows);
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
@@ -368,14 +399,10 @@ router.post('/:id/notes', authorizeRole(['admin', 'courier']), async (req, res) 
 
 router.get('/:id', async (req, res) => {
   try {
-    const order = await fetchOrderById(req.params.id, req.user.company_id);
+    const order = await getOrderById(req.params.id, req.user.company_id, req.user);
     if (!order) return res.status(404).json({ error: 'Order not found', code: 'ORDER_NOT_FOUND' });
-    if (req.user.role === 'courier') {
-      const access = checkCourierAccess(req.user, order);
-      if (!access.allowed) return respondCourierAccess(res, access);
-    }
     const notes = await getOrderNotes(req.params.id, req.user.company_id);
-    res.json({ ...enrichOrderRow(order, req.user), notes });
+    res.json({ ...order, notes });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -390,10 +417,14 @@ router.post('/', authorizeRole(['admin']), async (req, res) => {
       bidons_count,
       address,
       price,
+      unit_price,
       notes,
       order_type,
       scheduled_date,
       debt,
+      extras,
+      is_prepaid,
+      prepaid_amount,
     } = req.body;
 
     if (!customer_id) {
@@ -402,6 +433,8 @@ router.post('/', authorizeRole(['admin']), async (req, res) => {
 
     const type = normalizeOrderType(order_type);
     const scheduled = parseScheduledDateInput(scheduled_date);
+    const parsedExtras = parseExtrasInput(extras);
+    const extrasTotal = sumExtrasAmount(parsedExtras);
 
     const customer = await client.query(
       'SELECT * FROM customers WHERE id = $1 AND company_id = $2',
@@ -422,8 +455,33 @@ router.post('/', authorizeRole(['admin']), async (req, res) => {
     const status = courier_id ? 'assigned' : 'pending';
     const finalBidons = bidons_count ?? 1;
     const isPickup = type === 'pickup';
-    const finalPrice = isPickup ? 0 : Number(price ?? customerData.price ?? 0);
+
+    let waterPrice = 0;
+    let finalUnitPrice = 0;
+    if (!isPickup) {
+      if (unit_price != null && unit_price !== '') {
+        finalUnitPrice = Number(unit_price);
+        waterPrice = Number((finalUnitPrice * finalBidons).toFixed(2));
+      } else if (price != null && price !== '') {
+        waterPrice = Number(price);
+        finalUnitPrice =
+          finalBidons > 0
+            ? Number((waterPrice / finalBidons).toFixed(2))
+            : Number(customerData.price ?? 0);
+      } else {
+        finalUnitPrice = Number(customerData.price ?? 0);
+        waterPrice = Number((finalUnitPrice * finalBidons).toFixed(2));
+      }
+    }
+
+    const finalPrice = isPickup ? 0 : Number((waterPrice + extrasTotal).toFixed(2));
     const fullBidonsGiven = isPickup ? 0 : finalBidons;
+    const prepaid = Boolean(is_prepaid);
+    const prepaidValue = prepaid ? Number(prepaid_amount ?? finalPrice) : 0;
+    if (prepaid && (!Number.isFinite(prepaidValue) || prepaidValue < 0)) {
+      return res.status(400).json({ error: 'prepaid_amount must be a non-negative number' });
+    }
+    const isPaid = prepaid && prepaidValue >= finalPrice;
 
     await client.query('BEGIN');
 
@@ -438,10 +496,12 @@ router.post('/', authorizeRole(['admin']), async (req, res) => {
 
     const result = await client.query(
       `INSERT INTO orders (
-         company_id, customer_id, courier_id, bidons_count, address, price,
-         status, notes, full_bidons_given, assigned_at, order_type, scheduled_date
+         company_id, customer_id, courier_id, bidons_count, address, price, unit_price,
+         status, notes, full_bidons_given, assigned_at, order_type, scheduled_date,
+         is_prepaid, prepaid_amount, amount_paid, is_paid, paid_at
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::date) RETURNING *`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::date, $14, $15, $16, $17, $18)
+       RETURNING *`,
       [
         req.user.company_id,
         customer_id,
@@ -449,18 +509,29 @@ router.post('/', authorizeRole(['admin']), async (req, res) => {
         finalBidons,
         address || customerData.address,
         finalPrice,
+        isPickup ? null : finalUnitPrice,
         status,
         notes ?? null,
         fullBidonsGiven,
         courier_id ? new Date() : null,
         type,
         scheduled,
+        prepaid,
+        prepaidValue,
+        prepaid ? prepaidValue : null,
+        isPaid,
+        isPaid ? new Date() : null,
       ]
     );
 
-    await client.query('COMMIT');
-
     const order = result.rows[0];
+
+    if (parsedExtras.length) {
+      await insertOrderExtras(client, req.user.company_id, order.id, parsedExtras);
+      await adjustWarehouseForExtras(client, req.user.company_id, parsedExtras, -1);
+    }
+
+    await client.query('COMMIT');
 
     if (courier_id) {
       await notifyCourierOnAssign({
@@ -693,18 +764,19 @@ router.put('/:id/complete', authorizeRole(['courier', 'admin']), async (req, res
 
     const orderPrice = Number(existing.price);
     const customerDebt = Number(existing.debt ?? 0);
+    const prepaidAmount = Number(existing.prepaid_amount ?? 0);
     const paid =
       amount_paid != null
         ? Number(amount_paid)
         : payment_type === 'credit'
           ? 0
-          : orderPrice;
+          : Math.max(0, orderPrice - prepaidAmount);
 
     if (!Number.isFinite(paid) || paid < 0) {
       return res.status(400).json({ error: 'amount_paid must be a non-negative number' });
     }
 
-    const maxPay = maxCompletionPayment(orderPrice, customerDebt, payment_type);
+    const maxPay = maxCompletionPayment(orderPrice, customerDebt, payment_type, prepaidAmount);
     if (payment_type !== 'credit' && paid > maxPay + 0.001) {
       return res.status(400).json({
         error: `amount_paid cannot exceed order price + customer debt (${maxPay} AZN)`,

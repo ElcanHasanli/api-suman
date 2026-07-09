@@ -115,6 +115,9 @@ async function createSchema(client) {
       payment_type VARCHAR(50),
       amount_paid DECIMAL(10, 2),
       debt_paid_at_completion DECIMAL(10, 2) NOT NULL DEFAULT 0,
+      unit_price DECIMAL(10, 2),
+      is_prepaid BOOLEAN NOT NULL DEFAULT FALSE,
+      prepaid_amount DECIMAL(10, 2) NOT NULL DEFAULT 0,
       empty_bidons_returned INT DEFAULT 0,
       full_bidons_given INT,
       notes TEXT,
@@ -123,6 +126,18 @@ async function createSchema(client) {
       completed_at TIMESTAMP,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE order_extras (
+      id SERIAL PRIMARY KEY,
+      company_id INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      order_id INT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      extra_type VARCHAR(30) NOT NULL,
+      description TEXT,
+      quantity INT NOT NULL DEFAULT 1,
+      unit_price DECIMAL(10, 2) NOT NULL DEFAULT 0,
+      amount DECIMAL(10, 2) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE order_notes (
@@ -151,6 +166,8 @@ async function createSchema(client) {
       company_id INT PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
       full_count INT NOT NULL DEFAULT 0,
       empty_count INT NOT NULL DEFAULT 0,
+      pump_count INT NOT NULL DEFAULT 0,
+      dispenser_count INT NOT NULL DEFAULT 0,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_by INT REFERENCES users(id) ON DELETE SET NULL
     );

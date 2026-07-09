@@ -10,6 +10,8 @@ Kuryer anbarı yeniləyəndə admin paneldə real vaxtda görünür + FCM push (
 |-----------|--------|
 | Anbarda dolu bidon | `warehouse.full_count` |
 | Anbarda boş bidon | `warehouse.empty_count` |
+| Anbarda pompa | `warehouse.pump_count` |
+| Anbarda dispenser | `warehouse.dispenser_count` |
 | Müştərilərdə cəmi bidon | `customers.total_active_bidons` |
 | Müştəri sayı | `customers.customer_count` |
 | Son yeniləmə | `last_update` (kuryer, tarix, rəqəmlər) |
@@ -28,8 +30,16 @@ Sayım səhvi və ya ilk qurulum:
 
 ```http
 PATCH /api/warehouse/stock
-{ "full_count": 17, "empty_count": 8, "notes": "..." }
+{
+  "full_count": 17,
+  "empty_count": 8,
+  "pump_count": 5,
+  "dispenser_count": 2,
+  "notes": "..."
+}
 ```
+
+Pompa/dispenser satılanda (sifariş `extras` ilə) say avtomatik azalır.
 
 ## Push
 
