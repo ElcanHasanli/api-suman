@@ -60,20 +60,40 @@ export function maxCompletionPayment(orderPrice, existingDebt, payment_type, pre
 }
 
 export function orderUnitPrice(order) {
+  if (order.unit_price != null && order.unit_price !== '') {
+    return Number(order.unit_price);
+  }
   const baseBidons =
     Number(order.full_bidons_given ?? order.bidons_count ?? 1) || 1;
   return Number(order.price) / baseBidons;
 }
 
-export function resolveOrderPrice(order, fullBidonsGiven, explicitPrice = null) {
-  if (explicitPrice != null && explicitPrice !== '') {
-    return Number(explicitPrice);
-  }
+/**
+ * Yalnız su məbləği (extras olmadan).
+ * `orders.price` artıq su + extras cəmidir — ona görə unit_price üstünlük təşkil edir.
+ */
+export function resolveWaterPrice(order, fullBidonsGiven, explicitWaterPrice = null, extrasTotal = 0) {
   const given =
     Number(fullBidonsGiven ?? order.full_bidons_given ?? order.bidons_count ?? 1) ||
     1;
-  const unit = orderUnitPrice(order);
-  return Number((given * unit).toFixed(2));
+
+  if (explicitWaterPrice != null && explicitWaterPrice !== '') {
+    return Number(explicitWaterPrice);
+  }
+
+  if (order.unit_price != null && order.unit_price !== '') {
+    return Number((Number(order.unit_price) * given).toFixed(2));
+  }
+
+  // Legacy: price-də extras yoxdursa price/bidons; varsa çıxarıb suyu tapırıq
+  const totalPrice = Number(order.price ?? 0);
+  const waterOnly = Math.max(0, totalPrice - Number(extrasTotal ?? 0));
+  return Number(waterOnly.toFixed(2));
+}
+
+/** @deprecated — resolveWaterPrice istifadə edin; bu funksiya su məbləği qaytarır */
+export function resolveOrderPrice(order, fullBidonsGiven, explicitPrice = null) {
+  return resolveWaterPrice(order, fullBidonsGiven, explicitPrice, 0);
 }
 
 async function getOrderExtrasTotal(client, orderId) {
@@ -247,9 +267,10 @@ export async function completeOrder(orderId, {
     const customer = await lockCustomer(client, order.customer_id);
     const given = Number(full_bidons_given ?? order.bidons_count ?? 1);
     const extrasTotal = await getOrderExtrasTotal(client, order.id);
-    const waterPrice = resolveOrderPrice(order, given, explicitPrice);
+    const waterPrice = resolveWaterPrice(order, given, explicitPrice, extrasTotal);
     const orderPrice = Number((waterPrice + extrasTotal).toFixed(2));
-    const unitPrice = given > 0 ? Number((waterPrice / given).toFixed(2)) : deriveUnitPrice(order);
+    const unitPrice =
+      given > 0 ? Number((waterPrice / given).toFixed(2)) : deriveUnitPrice(order);
     const prepaidAmount = Number(order.prepaid_amount ?? 0);
     const paid =
       amount_paid != null
@@ -397,9 +418,10 @@ export async function updateCompletedOrder(orderId, courierId, {
       full_bidons_given ?? order.full_bidons_given ?? order.bidons_count ?? 1
     );
     const extrasTotal = await getOrderExtrasTotal(client, order.id);
-    const waterPrice = resolveOrderPrice(order, given, price);
+    const waterPrice = resolveWaterPrice(order, given, price, extrasTotal);
     const newPrice = Number((waterPrice + extrasTotal).toFixed(2));
-    const unitPrice = given > 0 ? Number((waterPrice / given).toFixed(2)) : deriveUnitPrice(order);
+    const unitPrice =
+      given > 0 ? Number((waterPrice / given).toFixed(2)) : deriveUnitPrice(order);
     const prepaidAmount = Number(order.prepaid_amount ?? 0);
     const paid =
       amount_paid != null
