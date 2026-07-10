@@ -1,19 +1,40 @@
-# Kuryer — Qismən ödəniş, borc və birlikdə ödəniş
+# Kuryer — Qismən ödəniş, borc və ayrı inputlar
 
-Kuryer sifarişi tamamlayarkən:
+Kuryer sifarişi tamamlayarkən **iki ayrı məbləğ** daxil edir:
 
-1. **Sifariş qiymətini** qismən və ya tam ödəyə bilər
-2. Ödəniş artıq qalıbsa, **müştərinin köhnə borcunu** da bağlaya bilər
-3. Sifarişdə ödənilməyən qalıq avtomatik müştəri borcuna yazılır
+1. **`amount_paid`** — yalnız **sifariş qiyməti** (və ya qalan hissəsi)
+2. **`debt_paid`** — yalnız **köhnə müştəri borcu** (əlavə ödəniş)
 
-## Müştəri borcu (sifariş siyahısı / detal)
+## Sifariş sahələri
 
-`GET /api/orders`, `GET /api/orders/:id` — join-dən:
+`GET /api/orders`, `GET /api/orders/:id`:
 
 | Sahə | Mənası |
 |------|--------|
-| `customer_debt` | Müştərinin cari ümumi borcu (AZN) |
-| `max_completion_payment` | Tamamlanmamış sifarişdə: `price + customer_debt` — kuryer bu qədər ödəyə bilər |
+| `price` | Sifariş ümumi qiyməti (su + extras) |
+| `prepaid_amount` | Əvvəlcədən ödənilmiş |
+| `order_due` | Tamamlamada sifariş üçün qalan: `price - prepaid_amount` |
+| `customer_debt` | Müştərinin köhnə borcu |
+| `max_order_payment` | Sifariş inputunun max-ı (`order_due`) |
+| `max_debt_payment` | Borc inputunun max-ı (`customer_debt`) |
+| `max_completion_payment` | Ümumi max: `order_due + customer_debt` |
+
+### Nümunə (ödənilib + borc)
+
+```json
+{
+  "price": 40,
+  "is_prepaid": true,
+  "prepaid_amount": 40,
+  "order_due": 0,
+  "customer_debt": 21,
+  "max_order_payment": 0,
+  "max_debt_payment": 21,
+  "max_completion_payment": 21
+}
+```
+
+Burada sifariş artıq ödənilib → `amount_paid: 0`, borc üçün `debt_paid: 0…21`.
 
 ## Tamamlama
 
@@ -24,71 +45,59 @@ PUT /api/orders/:id/complete
 ```json
 {
   "payment_type": "cash",
-  "amount_paid": 20,
+  "amount_paid": 40,
+  "debt_paid": 10,
   "empty_bidons_returned": 2,
-  "full_bidons_given": 3,
+  "full_bidons_given": 40,
   "notes": ""
 }
 ```
 
-| `payment_type` | `amount_paid` default (göndərilməsə) |
-|----------------|--------------------------------------|
-| `credit` | `0` |
-| `cash` / `card` | tam `price` |
+| Sahə | Default | Limit |
+|------|---------|-------|
+| `amount_paid` | `order_due` (credit → 0) | ≤ `max_order_payment` |
+| `debt_paid` | `0` | ≤ `max_debt_payment` |
 
-**Vacib:** `amount_paid` müştəridən **faktiki alınan ümumi məbləğdir** — sifariş + köhnə borc birlikdə.
+### Nümunələr
 
-### Ödənişin bölünməsi
+| Sifariş | Borc | `amount_paid` | `debt_paid` | Nəticə |
+|---------|------|---------------|-------------|--------|
+| 40 (ödənilməyib) | 21 | 40 | 10 | Sifariş tam, borc 11 qalır |
+| 40 (ödənilməyib) | 21 | 40 | 0 | Yalnız sifariş |
+| 40 (ödənilib / prepaid) | 21 | 0 | 21 | Yalnız borc bağlanır |
+| 40 | 0 | 30 | 0 | Sifariş qismən, borc +10 |
 
-```
-sifarişə gedən = min(amount_paid, price)
-köhnə borca gedən = min(amount_paid - price, customer_debt)   // price tam ödənildikdən sonra
-```
-
-| Qiymət | Köhnə borc | `amount_paid` | Nəticə |
-|--------|------------|---------------|--------|
-| 10 AZN | 10 AZN | 20 | Sifarişə 10, borca 10, `customer_debt: 0`, `is_paid: true` |
-| 10 AZN | 10 AZN | 15 | Sifarişə 10, borca 5, `customer_debt: 5`, `is_paid: true` |
-| 10 AZN | 0 | 5 | Sifarişə 5, borca 0, `customer_debt: 5`, `is_paid: false` |
-| 10 AZN | 0 | 0 (`credit`) | Borc +10, `is_paid: false` |
-
-**Limit:** `amount_paid` ≤ `price + customer_debt` (əks halda `AMOUNT_EXCEEDS_PAYABLE`).
-
-## Cavabda sahələr
+### Prepaid sifariş
 
 ```json
 {
-  "price": 10,
-  "amount_paid": 10,
-  "debt_paid_at_completion": 10,
-  "total_collected": 20,
-  "is_paid": true,
-  "remaining_amount": 0,
-  "customer_debt": 0,
-  "payment_type": "cash"
+  "payment_type": "cash",
+  "amount_paid": 0,
+  "debt_paid": 21,
+  "empty_bidons_returned": 40,
+  "full_bidons_given": 40
 }
 ```
 
-| Sahə | Mənası |
-|------|--------|
-| `amount_paid` | Bu sifarişin qiymətindən ödənilən hissə |
-| `debt_paid_at_completion` | Tamamlama zamanı köhnə borcdan ödənilən hissə |
-| `total_collected` | `amount_paid + debt_paid_at_completion` — kuryerin aldığı ümumi məbləğ |
-| `remaining_amount` | Bu sifarişdə hələ ödənilməmiş qalıq |
-| `customer_debt` | Müştərinin yeni ümumi borcu |
-
 ## UI tövsiyəsi
 
-1. Tamamlama formunda müştəri borcunu göstərin (`customer_debt`)
-2. **«Ödənilən məbləğ»** — default `price`; borc varsa kuryer artıra bilər (max `max_completion_payment`)
-3. `amount_paid > price` olduqda: «**X AZN** köhnə borcdan ödəniləcək»
-4. `amount_paid < price` olduqda: «Qalan **X AZN** müştəri borcuna yazılacaq»
-5. `payment_type: credit` — ödəniş 0, bütün məbləğ borca gedir
+1. **Sifariş ödənişi** input — default `order_due`, max `max_order_payment`
+2. **Borc ödənişi** input — yalnız `customer_debt > 0` olduqda; default `0`, max `max_debt_payment`
+3. Cəmi göstərin: `amount_paid + debt_paid`
+4. `is_prepaid` / `order_due === 0` → sifariş inputu 0 və ya disabled; yalnız borc inputu aktiv
+5. `payment_type: credit` → hər iki input 0
 
 ## Redaktə (24 saat)
 
-`PATCH /api/orders/:id/completion` — `amount_paid` dəyişəndə bölünmə və borc yenidən hesablanır.
+`PATCH /api/orders/:id/completion` — eyni `amount_paid` + `debt_paid`.
 
-**Xəta kodları:** `ORDER_ALREADY_PAID`, `EDIT_WINDOW_EXPIRED`, `AMOUNT_EXCEEDS_PAYABLE`.
+**Xəta kodları:**
+
+| `code` | Mənası |
+|--------|--------|
+| `AMOUNT_EXCEEDS_ORDER` | `amount_paid > order_due` |
+| `AMOUNT_EXCEEDS_DEBT` | `debt_paid > customer_debt` |
+| `ORDER_ALREADY_PAID` | Tam ödənilib, redaktə bağlı |
+| `EDIT_WINDOW_EXPIRED` | 24 saat keçib |
 
 Ətraflı: `docs/COURIER_FRONTEND_COMPLETION_EDIT.md`.

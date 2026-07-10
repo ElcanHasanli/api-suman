@@ -10,6 +10,9 @@
 | `extras` | Pompa, dispenser, cərimə və s. |
 | `is_prepaid` | Müştəri artıq ödəyib |
 | `prepaid_amount` | Əvvəlcədən ödənilmiş məbləğ |
+| `order_due` | Sifariş üçün qalan ödəniş (`price - prepaid_amount`) |
+| `max_order_payment` | Sifariş input max |
+| `max_debt_payment` | Borc input max |
 
 ### `extras` nümunəsi
 
@@ -21,22 +24,32 @@
 }
 ```
 
-## Tamamlama
+## Tamamlama — iki input
 
-- **Ödənilib** sifarişdə kuryer sifariş məbləğini təkrar almır — yalnız köhnə borc və ya qalan hissə
-- `max_completion_payment` = `(price - prepaid_amount) + customer_debt`
-- Ümumi qiymət `price`-ə pompa/cərimə daxildir
+```json
+{
+  "payment_type": "cash",
+  "amount_paid": 0,
+  "debt_paid": 21
+}
+```
 
-### Nümunə
+- **`amount_paid`** — yalnız sifariş qalığı (`order_due`)
+- **`debt_paid`** — yalnız köhnə borc (`customer_debt`)
 
-Sifariş: 2 su × 2.50 = 5 + pompa 12 = **17 AZN**, `prepaid_amount: 10`
+### Prepaid nümunə
 
-Kuryer tamamlayanda max nağd: **7 AZN** (qalan sifariş) + müştəri borcu.
+Sifariş: 40 AZN, `prepaid_amount: 40`, `customer_debt: 21`
+
+→ `order_due: 0`, `max_order_payment: 0`, `max_debt_payment: 21`
+
+Kuryer yalnız borc ödəyə bilər: `{ "amount_paid": 0, "debt_paid": 21 }`.
 
 ## UI tövsiyəsi
 
-1. Sifariş kartında `is_prepaid` olduqda **«Ödənilib»** badge
-2. `extras` varsa ayrıca sətirdə göstərin
-3. Tamamlama formunda `prepaid_amount` çıxılmış qalığı göstərin
+1. `is_prepaid` → **«Ödənilib»** badge
+2. `extras` varsa ayrıca sətirdə
+3. Tamamlama formunda **iki input**: sifariş + borc
+4. `order_due === 0` olduqda sifariş inputunu bağlayın
 
-Ətraflı ödəniş: `docs/COURIER_FRONTEND_PARTIAL_PAYMENT.md`.
+Ətraflı: `docs/COURIER_FRONTEND_PARTIAL_PAYMENT.md`.

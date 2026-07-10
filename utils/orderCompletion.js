@@ -9,13 +9,17 @@ export function unpaidOrderAmount(orderPrice, amountPaid) {
 
 /**
  * Ödənişi sifariş və köhnə borc arasında bölür.
+ *
+ * Yeni API: amount_paid = yalnız sifariş, debt_paid = yalnız köhnə borc (ayrı inputlar).
+ * Köhnə API: yalnız amount_paid göndərilib və orderDue-dan böyükdürsə, artıq hissə borca gedir.
  */
 export function splitCompletionPayment(
   orderPrice,
   amountPaid,
   existingDebt,
   payment_type,
-  prepaidAmount = 0
+  prepaidAmount = 0,
+  debtPaidExplicit = null
 ) {
   const price = Number(orderPrice);
   const debt = Math.max(0, Number(existingDebt ?? 0));
@@ -30,33 +34,126 @@ export function splitCompletionPayment(
       newCustomerDebt: debt + orderDue,
       isOrderPaid: false,
       totalCollected: 0,
+      totalOrderPaid: prepaid,
+      orderDue,
     };
   }
 
-  const paid = Math.max(0, Number(amountPaid ?? 0));
-  const orderAmountPaid = Math.min(paid, orderDue);
-  const surplus = Math.max(0, paid - orderDue);
-  const debtPaid = Math.min(surplus, debt);
-  const unpaidOrder = orderDue - orderAmountPaid;
+  let orderPaid = Math.max(0, Number(amountPaid ?? 0));
+  let debtPaid = 0;
+
+  if (debtPaidExplicit != null && debtPaidExplicit !== '') {
+    debtPaid = Math.max(0, Number(debtPaidExplicit));
+  } else if (orderPaid > orderDue + 0.001) {
+    debtPaid = Math.min(orderPaid - orderDue, debt);
+    orderPaid = orderDue;
+  }
+
+  orderPaid = Math.min(orderPaid, orderDue);
+  debtPaid = Math.min(debtPaid, debt);
+
+  const unpaidOrder = orderDue - orderPaid;
   const newCustomerDebt = Math.max(0, debt - debtPaid + unpaidOrder);
-  const totalOrderPaid = prepaid + orderAmountPaid;
+  const totalOrderPaid = prepaid + orderPaid;
 
   return {
-    orderAmountPaid,
+    orderAmountPaid: orderPaid,
     debtPaid,
     unpaidOrder,
     newCustomerDebt,
     isOrderPaid: totalOrderPaid >= price - 0.001,
-    totalCollected: paid,
+    totalCollected: orderPaid + debtPaid,
     totalOrderPaid,
+    orderDue,
   };
 }
 
-export function maxCompletionPayment(orderPrice, existingDebt, payment_type, prepaidAmount = 0) {
+export function maxOrderPayment(orderPrice, payment_type, prepaidAmount = 0) {
   if (payment_type === 'credit') return 0;
   const prepaid = Math.max(0, Number(prepaidAmount ?? 0));
-  const orderDue = Math.max(0, Number(orderPrice) - prepaid);
-  return orderDue + Math.max(0, Number(existingDebt ?? 0));
+  return Math.max(0, Number(orderPrice) - prepaid);
+}
+
+export function maxDebtPayment(existingDebt, payment_type) {
+  if (payment_type === 'credit') return 0;
+  return Math.max(0, Number(existingDebt ?? 0));
+}
+
+export function maxCompletionPayment(orderPrice, existingDebt, payment_type, prepaidAmount = 0) {
+  return (
+    maxOrderPayment(orderPrice, payment_type, prepaidAmount) +
+    maxDebtPayment(existingDebt, payment_type)
+  );
+}
+
+export function validateCompletionPayments({
+  orderPrice,
+  existingDebt,
+  payment_type,
+  prepaidAmount = 0,
+  amount_paid,
+  debt_paid,
+}) {
+  const orderDue = maxOrderPayment(orderPrice, payment_type, prepaidAmount);
+  const maxDebt = maxDebtPayment(existingDebt, payment_type);
+
+  if (payment_type === 'credit') {
+    return { orderPaid: 0, debtPaid: 0, orderDue, maxDebt };
+  }
+
+  let orderPaid =
+    amount_paid != null && amount_paid !== ''
+      ? Number(amount_paid)
+      : orderDue;
+  let debtPaid =
+    debt_paid != null && debt_paid !== '' ? Number(debt_paid) : 0;
+
+  if (!Number.isFinite(orderPaid) || orderPaid < 0) {
+    throw Object.assign(new Error('amount_paid must be a non-negative number'), {
+      status: 400,
+    });
+  }
+  if (!Number.isFinite(debtPaid) || debtPaid < 0) {
+    throw Object.assign(new Error('debt_paid must be a non-negative number'), {
+      status: 400,
+    });
+  }
+
+  // Legacy: debt_paid yoxdur, amount_paid ümumi məbləğ kimi
+  if (
+    (debt_paid == null || debt_paid === '') &&
+    amount_paid != null &&
+    orderPaid > orderDue + 0.001
+  ) {
+    const total = orderPaid;
+    const maxTotal = orderDue + maxDebt;
+    if (total > maxTotal + 0.001) {
+      throw Object.assign(
+        new Error(
+          `amount_paid cannot exceed order due + customer debt (${maxTotal} AZN)`
+        ),
+        { status: 400, code: 'AMOUNT_EXCEEDS_PAYABLE' }
+      );
+    }
+    debtPaid = Math.min(total - orderDue, maxDebt);
+    orderPaid = orderDue;
+  }
+
+  if (orderPaid > orderDue + 0.001) {
+    throw Object.assign(
+      new Error(`amount_paid cannot exceed order remaining (${orderDue} AZN)`),
+      { status: 400, code: 'AMOUNT_EXCEEDS_ORDER' }
+    );
+  }
+
+  if (debtPaid > maxDebt + 0.001) {
+    throw Object.assign(
+      new Error(`debt_paid cannot exceed customer debt (${maxDebt} AZN)`),
+      { status: 400, code: 'AMOUNT_EXCEEDS_DEBT' }
+    );
+  }
+
+  return { orderPaid, debtPaid, orderDue, maxDebt };
 }
 
 export function orderUnitPrice(order) {
@@ -128,6 +225,7 @@ async function revertCustomerCompletion(client, order) {
 async function applyPaymentCompletion(client, order, customer, {
   payment_type,
   amount_paid,
+  debt_paid = null,
   empty_bidons_returned,
   full_bidons_given,
   price,
@@ -143,7 +241,8 @@ async function applyPaymentCompletion(client, order, customer, {
     amount_paid,
     previousDebt,
     payment_type,
-    order.prepaid_amount
+    order.prepaid_amount,
+    debt_paid
   );
 
   await client.query(
@@ -229,6 +328,7 @@ async function lockCustomer(client, customerId) {
 export async function completeOrder(orderId, {
   payment_type,
   amount_paid,
+  debt_paid = null,
   empty_bidons_returned = 0,
   full_bidons_given,
   notes,
@@ -272,26 +372,20 @@ export async function completeOrder(orderId, {
     const unitPrice =
       given > 0 ? Number((waterPrice / given).toFixed(2)) : deriveUnitPrice(order);
     const prepaidAmount = Number(order.prepaid_amount ?? 0);
-    const paid =
-      amount_paid != null
-        ? Number(amount_paid)
-        : payment_type === 'credit'
-          ? 0
-          : Math.max(0, orderPrice - prepaidAmount);
 
-    const maxPay = maxCompletionPayment(orderPrice, customer.debt, payment_type, prepaidAmount);
-    if (payment_type !== 'credit' && paid > maxPay + 0.001) {
-      throw Object.assign(
-        new Error(
-          `amount_paid cannot exceed order price + customer debt (${maxPay} AZN)`
-        ),
-        { status: 400, code: 'AMOUNT_EXCEEDS_PAYABLE' }
-      );
-    }
+    const validated = validateCompletionPayments({
+      orderPrice,
+      existingDebt: customer.debt,
+      payment_type,
+      prepaidAmount,
+      amount_paid,
+      debt_paid,
+    });
 
     const split = await applyPaymentCompletion(client, order, customer, {
       payment_type,
-      amount_paid: paid,
+      amount_paid: validated.orderPaid,
+      debt_paid: validated.debtPaid,
       empty_bidons_returned,
       full_bidons_given: given,
       price: orderPrice,
@@ -343,6 +437,7 @@ export async function completeOrder(orderId, {
 export async function updateCompletedOrder(orderId, courierId, {
   payment_type,
   amount_paid,
+  debt_paid = null,
   empty_bidons_returned,
   full_bidons_given,
   notes,
@@ -423,26 +518,19 @@ export async function updateCompletedOrder(orderId, courierId, {
     const unitPrice =
       given > 0 ? Number((waterPrice / given).toFixed(2)) : deriveUnitPrice(order);
     const prepaidAmount = Number(order.prepaid_amount ?? 0);
-    const paid =
-      amount_paid != null
-        ? Number(amount_paid)
-        : payment_type === 'credit'
-          ? Number(order.amount_paid ?? 0)
-          : Math.max(0, newPrice - prepaidAmount);
-
-    const maxPay = maxCompletionPayment(newPrice, customer.debt, payment_type, prepaidAmount);
-    if (payment_type !== 'credit' && paid > maxPay + 0.001) {
-      throw Object.assign(
-        new Error(
-          `amount_paid cannot exceed order price + customer debt (${maxPay} AZN)`
-        ),
-        { status: 400, code: 'AMOUNT_EXCEEDS_PAYABLE' }
-      );
-    }
+    const validated = validateCompletionPayments({
+      orderPrice: newPrice,
+      existingDebt: customer.debt,
+      payment_type,
+      prepaidAmount,
+      amount_paid,
+      debt_paid,
+    });
 
     const split = await applyPaymentCompletion(client, order, customer, {
       payment_type,
-      amount_paid: paid,
+      amount_paid: validated.orderPaid,
+      debt_paid: validated.debtPaid,
       empty_bidons_returned,
       full_bidons_given: given,
       price: newPrice,

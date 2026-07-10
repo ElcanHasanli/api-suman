@@ -11,7 +11,6 @@ import {
   recordOrderPayment,
   updateCompletedOrder,
   unpaidOrderAmount,
-  maxCompletionPayment,
 } from '../utils/orderCompletion.js';
 import { notifyCourierOnAssign } from '../lib/notifyCourier.js';
 import {
@@ -92,6 +91,10 @@ function enrichOrderRow(order, user = null) {
       ? toBakuDateTimeString(order.completed_at)
       : null,
     remaining_amount: unpaidOrderAmount(orderPrice, orderAmountPaid),
+    order_due:
+      order.status !== 'completed'
+        ? Math.max(0, orderPrice - prepaidAmount)
+        : unpaidOrderAmount(orderPrice, orderAmountPaid),
     customer_debt: customerDebt,
     debt_paid_at_completion: debtPaidAtCompletion,
     total_collected: orderAmountPaid + debtPaidAtCompletion,
@@ -101,6 +104,12 @@ function enrichOrderRow(order, user = null) {
     extras: (order.extras ?? []).map((item) =>
       item.label ? item : formatExtraRow(item)
     ),
+    max_order_payment:
+      order.status !== 'completed' ? orderDue : undefined,
+    max_debt_payment:
+      order.status !== 'completed' && customerDebt != null
+        ? customerDebt
+        : undefined,
     max_completion_payment:
       order.status !== 'completed' && customerDebt != null
         ? orderDue + customerDebt
@@ -756,37 +765,17 @@ router.put('/:id/complete', authorizeRole(['courier', 'admin']), async (req, res
       return res.json(await getOrderById(order.id, req.user.company_id, req.user));
     }
 
-    const { payment_type, amount_paid, empty_bidons_returned, full_bidons_given, notes } = req.body;
+    const { payment_type, amount_paid, debt_paid, empty_bidons_returned, full_bidons_given, notes } =
+      req.body;
 
     if (!payment_type || !['cash', 'card', 'credit'].includes(payment_type)) {
       return res.status(400).json({ error: 'payment_type must be cash, card, or credit' });
     }
 
-    const orderPrice = Number(existing.price);
-    const customerDebt = Number(existing.debt ?? 0);
-    const prepaidAmount = Number(existing.prepaid_amount ?? 0);
-    const paid =
-      amount_paid != null
-        ? Number(amount_paid)
-        : payment_type === 'credit'
-          ? 0
-          : Math.max(0, orderPrice - prepaidAmount);
-
-    if (!Number.isFinite(paid) || paid < 0) {
-      return res.status(400).json({ error: 'amount_paid must be a non-negative number' });
-    }
-
-    const maxPay = maxCompletionPayment(orderPrice, customerDebt, payment_type, prepaidAmount);
-    if (payment_type !== 'credit' && paid > maxPay + 0.001) {
-      return res.status(400).json({
-        error: `amount_paid cannot exceed order price + customer debt (${maxPay} AZN)`,
-        code: 'AMOUNT_EXCEEDS_PAYABLE',
-      });
-    }
-
     const order = await completeOrder(req.params.id, {
       payment_type,
-      amount_paid: paid,
+      amount_paid,
+      debt_paid,
       empty_bidons_returned,
       full_bidons_given: full_bidons_given ?? existing.full_bidons_given ?? existing.bidons_count,
       notes,
@@ -803,7 +792,7 @@ router.put('/:id/complete', authorizeRole(['courier', 'admin']), async (req, res
 
     res.json(await getOrderById(order.id, req.user.company_id, req.user));
   } catch (err) {
-    res.status(err.status || 500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message, code: err.code ?? undefined });
   }
 });
 
@@ -826,6 +815,7 @@ router.patch('/:id/completion', authorizeRole(['courier']), async (req, res) => 
     const {
       payment_type,
       amount_paid,
+      debt_paid,
       empty_bidons_returned,
       full_bidons_given,
       notes,
@@ -835,6 +825,7 @@ router.patch('/:id/completion', authorizeRole(['courier']), async (req, res) => 
     const order = await updateCompletedOrder(req.params.id, req.user.id, {
       payment_type: payment_type ?? existing.payment_type,
       amount_paid,
+      debt_paid,
       empty_bidons_returned,
       full_bidons_given,
       notes,
