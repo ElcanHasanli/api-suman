@@ -1,6 +1,7 @@
 import pool from '../config/database.js';
 import { isPickupOrder } from './orderTypes.js';
 import { deriveUnitPrice } from './orderExtras.js';
+import { settleUnpaidOrdersFromDebtPayment } from './customerDebt.js';
 
 /** Sifariş qiyməti ilə ödənilən arasındakı fərq — müştəri borcuna əlavə olunur. */
 export function unpaidOrderAmount(orderPrice, amountPaid) {
@@ -269,6 +270,14 @@ async function applyPaymentCompletion(client, order, customer, {
         recordedBy,
       ]
     );
+
+    // Köhnə nişə/qismən sifarişləri tarixçədən çıxarmaq üçün bağla
+    await settleUnpaidOrdersFromDebtPayment(client, {
+      companyId: order.company_id,
+      customerId: order.customer_id,
+      payAmount: split.debtPaid,
+      excludeOrderId: order.id,
+    });
   }
 
   return split;
@@ -679,6 +688,9 @@ export async function recordOrderPayment(orderId, { amount, recordedBy }) {
       );
       debtPayment = dp.rows[0];
     }
+
+    // Bu sifariş artıq yuxarıda yenilənib; qalan məbləğ digər köhnə sifarişlərə getmir
+    // (mark-paid yalnız bu sifarişin qalığı üçündür)
 
     await client.query('COMMIT');
 

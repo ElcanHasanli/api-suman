@@ -199,7 +199,9 @@ export function buildCreditBox(orders, courierId = null) {
     (o) =>
       matchesCourier(o, courierId) &&
       !isPickupOrder(o) &&
-      o.payment_type === 'credit'
+      o.payment_type === 'credit' &&
+      !o.is_paid &&
+      unpaidOrderAmount(o.price, o.amount_paid) > 0.001
   );
 
   const customers = filtered.map((order) => {

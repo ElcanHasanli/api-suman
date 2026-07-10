@@ -79,7 +79,9 @@ qalıq = kuryerdə_qalıq − xərclər
 
 ## 3. Nişə
 
-`payment_type === 'credit'` olan tamamlanmış sifarişlərin ödənilməmiş məbləği.
+`payment_type === 'credit'` **və hələ ödənilməmiş** (`is_paid: false`, `remaining_amount > 0`) tamamlanmış sifarişlər.
+
+Kuryer/admin sonradan müştəri borcunu ödəyəndə (`debt_paid` və ya borclu müştərilər səhifəsi) həmin köhnə nişə sifarişləri avtomatik bağlanır və bu qutudan çıxır.
 
 ## 4. Ödənilib
 
