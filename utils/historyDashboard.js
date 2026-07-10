@@ -160,16 +160,27 @@ export function buildSalesBox(orders, courierId = null) {
   };
 }
 
+/**
+ * «Borc verildi» — yalnız kuryerin müştəridən aldığı borc ödənişi.
+ * Admin panelindən borc sıfırlama / mark-paid buraya düşmür.
+ */
 export function buildDebtGivenBox(debtPayments, orders, courierId = null) {
   const orderCourierMap = new Map(
     orders.map((o) => [Number(o.id), { courier_id: o.courier_id, courier_name: o.courier_name }])
   );
 
   const filtered = debtPayments.filter((dp) => {
+    // Yalnız kuryer qeydi (tamamlama zamanı debt_paid)
+    if (dp.recorded_by_role && dp.recorded_by_role !== 'courier') return false;
+    if (!dp.recorded_by_role && !dp.order_id) return false;
+
     if (!courierId) return true;
+
     if (dp.order_id) {
       const orderMeta = orderCourierMap.get(Number(dp.order_id));
-      return orderMeta && Number(orderMeta.courier_id) === Number(courierId);
+      if (orderMeta) {
+        return Number(orderMeta.courier_id) === Number(courierId);
+      }
     }
     return Number(dp.recorded_by) === Number(courierId);
   });
@@ -184,6 +195,7 @@ export function buildDebtGivenBox(debtPayments, orders, courierId = null) {
     amount: roundMoney(dp.amount),
     order_id: dp.order_id,
     recorded_by_name: dp.recorded_by_name,
+    recorded_by_role: dp.recorded_by_role ?? null,
     created_at: dp.created_at,
   }));
 

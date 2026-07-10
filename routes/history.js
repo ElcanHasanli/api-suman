@@ -87,7 +87,10 @@ function summarizeOrders(rows) {
 
 function buildFullSummary(orderSummary, expenses, debtPayments) {
   const totalExpenses = expenses.reduce((s, e) => s + Number(e.amount), 0);
-  const debtCollected = debtPayments.reduce((s, d) => s + Number(d.amount), 0);
+  /** Yalnız kuryerin müştəridən aldığı borc (admin sıfırlama daxil deyil) */
+  const debtCollected = debtPayments
+    .filter((d) => d.recorded_by_role === 'courier')
+    .reduce((s, d) => s + Number(d.amount), 0);
 
   orderSummary.debtCollected = debtCollected;
   orderSummary.salesRevenue = orderSummary.orderRevenue;
@@ -147,7 +150,7 @@ async function fetchExpenses(period, startDate, endDate, companyId, courierId = 
 async function fetchDebtPayments(period, startDate, endDate, companyId) {
   let query = `
     SELECT dp.*, c.name AS customer_name, c.surname AS customer_surname,
-           u.name AS recorded_by_name
+           u.name AS recorded_by_name, u.role AS recorded_by_role
     FROM debt_payments dp
     JOIN customers c ON dp.customer_id = c.id
     JOIN users u ON dp.recorded_by = u.id

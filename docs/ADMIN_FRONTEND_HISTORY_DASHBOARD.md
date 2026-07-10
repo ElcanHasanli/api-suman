@@ -64,19 +64,33 @@ qalıq = kuryerdə_qalıq − xərclər
 
 ## 2. Borc verildi
 
+Yalnız **kuryerin** müştəridən aldığı köhnə borc ödənişi (`debt_paid` tamamlamada).
+
+**Daxil deyil:**
+- Admin panelindən borc sıfırlama / `pay-debt`
+- Admin `mark-paid`
+
+Admin ödənişləri aşağıdakı `debtPayments` siyahısında görünür (`recorded_by_role: "admin"`).
+
 ```json
 {
   "debt_given": {
     "total": 23,
     "count": 2,
     "customers": [
-      { "customer": "Adrik", "amount": 9, "order_id": 15 },
-      { "customer": "Elvira", "amount": 14, "order_id": null }
+      {
+        "customer": "Adrik",
+        "amount": 9,
+        "order_id": 15,
+        "recorded_by_name": "Elnur",
+        "recorded_by_role": "courier"
+      }
     ]
   }
 }
 ```
 
+`debtPayments` (aşağı siyahı) — bütün ödənişlər (kuryer + admin).
 ## 3. Nişə
 
 `payment_type === 'credit'` **və hələ ödənilməmiş** (`is_paid: false`, `remaining_amount > 0`) tamamlanmış sifarişlər.
