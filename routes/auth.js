@@ -19,6 +19,21 @@ async function buildAuthResponse(user, company = null) {
     expiresIn: process.env.JWT_EXPIRE,
   });
 
+  let default_warehouse = null;
+  if (user.role === 'courier' && user.default_warehouse_id) {
+    const wh = await pool.query(
+      `SELECT id, code, name FROM warehouses WHERE id = $1`,
+      [user.default_warehouse_id]
+    );
+    if (wh.rows[0]) {
+      default_warehouse = {
+        id: wh.rows[0].id,
+        code: wh.rows[0].code,
+        name: wh.rows[0].name,
+      };
+    }
+  }
+
   return {
     message: 'Login successful',
     token,
@@ -29,6 +44,8 @@ async function buildAuthResponse(user, company = null) {
       role: user.role,
       company_id: user.company_id ?? null,
       company_name: company?.name ?? null,
+      default_warehouse_id: user.default_warehouse_id ?? null,
+      default_warehouse,
     },
   };
 }
@@ -100,9 +117,12 @@ router.get('/me', async (req, res) => {
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     const result = await pool.query(
-      `SELECT u.id, u.email, u.name, u.role, u.status, u.company_id, c.name AS company_name
+      `SELECT u.id, u.email, u.name, u.role, u.status, u.company_id, u.default_warehouse_id,
+              c.name AS company_name,
+              w.id AS warehouse_id, w.code AS warehouse_code, w.name AS warehouse_name
        FROM users u
        LEFT JOIN companies c ON u.company_id = c.id
+       LEFT JOIN warehouses w ON w.id = u.default_warehouse_id
        WHERE u.id = $1`,
       [payload.id]
     );
@@ -124,6 +144,14 @@ router.get('/me', async (req, res) => {
         role: user.role,
         company_id: user.company_id,
         company_name: user.company_name,
+        default_warehouse_id: user.default_warehouse_id ?? null,
+        default_warehouse: user.warehouse_id
+          ? {
+              id: user.warehouse_id,
+              code: user.warehouse_code,
+              name: user.warehouse_name,
+            }
+          : null,
       },
     });
   } catch (err) {

@@ -18,6 +18,8 @@ async function dropBusinessTables(client) {
     DROP TABLE IF EXISTS expenses CASCADE;
     DROP TABLE IF EXISTS warehouse_updates CASCADE;
     DROP TABLE IF EXISTS warehouse_stock CASCADE;
+    DROP TABLE IF EXISTS warehouses CASCADE;
+    DROP TABLE IF EXISTS order_extras CASCADE;
     DROP TABLE IF EXISTS orders CASCADE;
     DROP TABLE IF EXISTS customers CASCADE;
     DROP TABLE IF EXISTS device_tokens CASCADE;
@@ -29,7 +31,9 @@ async function dropBusinessTables(client) {
     await client.query('DROP TABLE IF EXISTS users CASCADE');
   } else {
     await client.query(`
-      UPDATE users SET company_id = NULL WHERE company_id IS NOT NULL;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS default_warehouse_id INT;
+      UPDATE users SET company_id = NULL, default_warehouse_id = NULL
+      WHERE company_id IS NOT NULL OR default_warehouse_id IS NOT NULL;
     `);
   }
 }
@@ -162,6 +166,20 @@ async function createSchema(client) {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE warehouses (
+      id SERIAL PRIMARY KEY,
+      company_id INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      code VARCHAR(30) NOT NULL,
+      name VARCHAR(100) NOT NULL,
+      full_count INT NOT NULL DEFAULT 0,
+      empty_count INT NOT NULL DEFAULT 0,
+      pump_count INT NOT NULL DEFAULT 0,
+      dispenser_count INT NOT NULL DEFAULT 0,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_by INT REFERENCES users(id) ON DELETE SET NULL,
+      UNIQUE (company_id, code)
+    );
+
     CREATE TABLE warehouse_stock (
       company_id INT PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
       full_count INT NOT NULL DEFAULT 0,
@@ -175,12 +193,16 @@ async function createSchema(client) {
     CREATE TABLE warehouse_updates (
       id SERIAL PRIMARY KEY,
       company_id INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      warehouse_id INT REFERENCES warehouses(id) ON DELETE SET NULL,
       courier_id INT REFERENCES users(id) ON DELETE SET NULL,
       created_by INT NOT NULL REFERENCES users(id),
       empty_in INT NOT NULL DEFAULT 0,
       full_in INT NOT NULL DEFAULT 0,
       full_out INT NOT NULL DEFAULT 0,
       exit_full INT,
+      entry_full INT,
+      entry_empty INT,
+      full_taken INT,
       previous_full INT NOT NULL DEFAULT 0,
       previous_empty INT NOT NULL DEFAULT 0,
       remaining_full INT NOT NULL DEFAULT 0,
@@ -240,9 +262,16 @@ async function createSchema(client) {
       WHERE status IN ('assigned', 'in_progress');
     CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, read);
     CREATE INDEX IF NOT EXISTS idx_expenses_company ON expenses(company_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_warehouses_company ON warehouses(company_id);
     CREATE INDEX IF NOT EXISTS idx_warehouse_updates_company ON warehouse_updates(company_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_customer_inactivity_alerts_company ON customer_inactivity_alerts(company_id, notified_at DESC);
     CREATE INDEX IF NOT EXISTS idx_device_tokens_company_admin ON device_tokens(company_id, app) WHERE app = 'admin';
+  `);
+
+  await client.query(`
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS default_warehouse_id INT
+        REFERENCES warehouses(id) ON DELETE SET NULL;
   `);
 }
 

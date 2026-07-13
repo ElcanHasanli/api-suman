@@ -1,52 +1,50 @@
-# Su doldurma anbarı
+# Su doldurma anbarı (2 məntəqə)
 
-Kuryer su doldurma məntəqəsində bidon hərəkətini qeyd edir; admin real vaxtda anbar və müştəridəki ümumi bidon sayını görür.
+Şirkətin **2 anbarı** var: **Novxanı** (`novxani`) və **Azadlıq** (`azadliq`).
+Hər kuryerin default anbarı olur; yeniləmədə dəyişmək də olar.
 
-## Biznes məntiqi (köhnə WhatsApp mesajı)
+## Kuryer məntiqi (sadə)
+
+Yalnız 3 rəqəm:
+
+| Sahə | Məna |
+|------|------|
+| `entry_full` | Anbara **neçə dolu** ilə girdi |
+| `entry_empty` | Anbara **neçə boş** ilə girdi |
+| `exit_full` | Anbardan **neçə dolu** ilə çıxdı |
 
 ```
-Su doldurma
-8 boş 23 dolu    → anbara daxil: 8 boş, 23 dolu
-+7 dolu           → anbardan götürülən dolu: 7
-çıxış 30 dolu     → maşında (məlumat): 30
-Yerdə qaldı 17    → anbarda qalan dolu: 17
+full_taken = exit_full − entry_full
 ```
 
-| Sahə API | Mənası |
-|----------|--------|
-| `empty_in` | Anbara daxil boş bidon |
-| `full_in` | Anbara daxil dolu bidon |
-| `full_out` | Anbardan götürülən dolu bidon |
-| `exit_full` | Kuryerin maşınındakı dolu (opsional, audit) |
-| `remaining_full` | **Mütləq** — anbarda qalan dolu |
-| `remaining_empty` | Anbarda qalan boş (göndərilməsə: əvvəlki + `empty_in`) |
+**Nümunə:** 10 dolu + 5 boş ilə girdi, 20 dolu ilə çıxdı → **10 dolu götürdü**.
 
-Yoxlama: `əvvəlki_dolu + full_in - full_out` ≈ `remaining_full` (uyğunsuzluqda `calculation.mismatch: true` qayıdır, yeniləmə qəbul olunur).
+Anbar stoku:
+- boş += `entry_empty`
+- dolu −= `full_taken`
 
 ## API
 
 | Method | URL | Kim |
 |--------|-----|-----|
 | GET | `/api/warehouse/summary` | admin, kuryer |
-| GET | `/api/warehouse/updates?period=yesterday\|today\|custom&startDate=&endDate=` | admin, kuryer |
+| GET | `/api/warehouse/updates?warehouse_code=&courier_id=` | admin, kuryer |
 | POST | `/api/warehouse/update` | kuryer |
-| PATCH | `/api/warehouse/stock` | admin (birbaşa say) |
+| PATCH | `/api/warehouse/stock` | admin |
+| PATCH | `/api/couriers/:id/warehouse` | admin (default anbar) |
 
 ### GET `/api/warehouse/summary`
 
 ```json
 {
-  "warehouse": {
-    "full_count": 17,
-    "empty_count": 8,
-    "updated_at": "...",
-    "updated_by_name": "Kuryer Adı"
-  },
-  "customers": {
-    "total_active_bidons": 342,
-    "customer_count": 120
-  },
-  "last_update": { ... }
+  "warehouses": [
+    { "id": 1, "code": "novxani", "name": "Novxanı", "full_count": 17, "empty_count": 8 },
+    { "id": 2, "code": "azadliq", "name": "Azadlıq", "full_count": 12, "empty_count": 3 }
+  ],
+  "default_warehouse": { "id": 1, "code": "novxani", "name": "Novxanı" },
+  "warehouse": { "...": "kuryer üçün default / Novxanı (köhnə uyğunluq)" },
+  "customers": { "total_active_bidons": 342, "customer_count": 120 },
+  "last_update": { "...": "..." }
 }
 ```
 
@@ -54,34 +52,50 @@ Yoxlama: `əvvəlki_dolu + full_in - full_out` ≈ `remaining_full` (uyğunsuzlu
 
 ```json
 {
-  "empty_in": 8,
-  "full_in": 23,
-  "full_out": 7,
-  "exit_full": 30,
-  "remaining_full": 17,
-  "remaining_empty": 8,
+  "warehouse_code": "novxani",
+  "entry_full": 10,
+  "entry_empty": 5,
+  "exit_full": 20,
   "notes": ""
 }
 ```
 
-Cavab: `{ stock, update, calculation }`
+- `warehouse_id` və ya `warehouse_code` — göndərilməsə kuryerin **default** anbarı
+- `exit_full` ≥ `entry_full` olmalıdır
+
+Cavab: `{ warehouse, update, calculation: { full_taken: 10, ... } }`
 
 ### PATCH `/api/warehouse/stock` (admin)
 
 ```json
-{ "full_count": 17, "empty_count": 8, "notes": "İnventar sayımı" }
+{
+  "warehouse_code": "azadliq",
+  "full_count": 17,
+  "empty_count": 8,
+  "notes": "Sayım"
+}
 ```
+
+### Admin — kuryer default anbar
+
+```http
+PATCH /api/couriers/:id/warehouse
+{ "warehouse_code": "novxani" }
+```
+
+və ya `{ "default_warehouse_id": 1 }`
+
+Login / `/api/auth/me` cavabında kuryerdə: `default_warehouse`.
 
 ## Push (admin)
 
-Kuryer `POST /update` etdikdə:
-
 - `type`: `warehouse_updated`
 - `screen`: `warehouse`
+- `warehouse_id`
 
 ## Deploy
 
 ```bash
-npm run db:migrate:warehouse
-pm2 restart all
+npm run db:migrate:warehouse-locations
+pm2 restart api-suman
 ```

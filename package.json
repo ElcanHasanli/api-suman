@@ -17,6 +17,7 @@
     "db:migrate:notifications": "node scripts/db-migrate-notifications.js",
     "db:migrate:devices": "node scripts/db-migrate-device-tokens.js",
     "db:migrate:warehouse": "node scripts/db-migrate-warehouse.js",
+    "db:migrate:warehouse-locations": "node scripts/db-migrate-warehouse-locations.js",
     "db:migrate:assigned-at": "node scripts/db-migrate-assigned-at.js",
     "db:migrate:customer-inactivity": "node scripts/db-migrate-customer-inactivity-alerts.js",
     "db:migrate:expense-source": "node scripts/db-migrate-expense-source.js",

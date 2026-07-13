@@ -1,45 +1,54 @@
-# Admin — Su doldurma anbarı (yeni)
+# Admin — Su doldurma anbarı (2 məntəqə)
 
-Kuryer anbarı yeniləyəndə admin paneldə real vaxtda görünür + FCM push (`warehouse_updated`).
+**Novxanı** və **Azadlıq** — iki ayrı anbar. Hər kuryerin default anbarı var.
 
-## Dashboard / Anbar səhifəsi
+## Dashboard
 
-**Əsas göstəricilər** (`GET /api/warehouse/summary`):
+`GET /api/warehouse/summary` → `warehouses[]` (hər məntəqənin dolu/boş/pompa/dispenser).
 
 | Göstərici | Mənbə |
 |-----------|--------|
-| Anbarda dolu bidon | `warehouse.full_count` |
-| Anbarda boş bidon | `warehouse.empty_count` |
-| Anbarda pompa | `warehouse.pump_count` |
-| Anbarda dispenser | `warehouse.dispenser_count` |
-| Müştərilərdə cəmi bidon | `customers.total_active_bidons` |
-| Müştəri sayı | `customers.customer_count` |
-| Son yeniləmə | `last_update` (kuryer, tarix, rəqəmlər) |
+| Novxanı / Azadlıq dolu-boş | `warehouses[].full_count` / `empty_count` |
+| Pompa / dispenser | `warehouses[].pump_count` / `dispenser_count` |
+| Müştərilərdə bidon | `customers.total_active_bidons` |
+| Son yeniləmə | `last_update` |
 
-## Tarixçə
+## Kuryer yeniləməsi (oxumaq)
 
-```http
-GET /api/warehouse/updates?period=today|week|month&courier_id=
-```
+Tarixçə: `GET /api/warehouse/updates?warehouse_code=novxani&period=today`
 
-Hər sətir: `empty_in`, `full_in`, `full_out`, `exit_full`, `previous_*`, `remaining_*`, `courier_name`, `created_at`.
+Hər sətirdə:
+
+| Sahə | Məna |
+|------|------|
+| `entry_full` | Neçə dolu ilə girdi |
+| `entry_empty` | Neçə boş ilə girdi |
+| `exit_full` | Neçə dolu ilə çıxdı |
+| `full_taken` | Anbardan götürülən dolu (`exit_full − entry_full`) |
+| `warehouse_name` | Novxanı / Azadlıq |
+
+**Nümunə UI:** `Elnur · Novxanı · girdi 10 dolu + 5 boş · çıxdı 20 dolu · götürdü 10`
 
 ## Admin düzəlişi
-
-Sayım səhvi və ya ilk qurulum:
 
 ```http
 PATCH /api/warehouse/stock
 {
+  "warehouse_code": "azadliq",
   "full_count": 17,
   "empty_count": 8,
-  "pump_count": 5,
-  "dispenser_count": 2,
   "notes": "..."
 }
 ```
 
-Pompa/dispenser satılanda (sifariş `extras` ilə) say avtomatik azalır.
+## Kuryer default anbar
+
+```http
+PATCH /api/couriers/26/warehouse
+{ "warehouse_code": "novxani" }
+```
+
+Kuryer siyahısı: `GET /api/couriers` → `default_warehouse`.
 
 ## Push
 
@@ -47,12 +56,8 @@ Pompa/dispenser satılanda (sifariş `extras` ilə) say avtomatik azalır.
 |-------------|---------------|
 | `warehouse_updated` | `warehouse` |
 
-Bildiriş mətni nümunəsi: `Kuryer: +8 boş, +23 dolu, −7 dolu → anbarda 17 dolu, 8 boş`
-
-## Deploy (backend)
+## Deploy
 
 ```bash
-npm run db:migrate:warehouse
+npm run db:migrate:warehouse-locations
 ```
-
-Ətraflı: `docs/WAREHOUSE.md`

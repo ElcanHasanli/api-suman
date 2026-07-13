@@ -4,8 +4,11 @@ import { authenticateToken, authorizeRole, requireTenant } from '../middleware/a
 import { buildDateFilter } from '../utils/periodFilter.js';
 import {
   applyWarehouseUpdate,
+  formatWarehouseUpdate,
+  getCourierDefaultWarehouse,
   getCustomersBidonSummary,
-  getWarehouseStock,
+  getWarehouseById,
+  listWarehouses,
   setWarehouseStockByAdmin,
 } from '../utils/warehouse.js';
 import { notifyAdminsWarehouseUpdated } from '../lib/notifyAdmins.js';
@@ -14,43 +17,59 @@ const router = express.Router();
 
 router.use(authenticateToken, requireTenant);
 
-/** Anbar + müştəri bidon xülasəsi */
+async function mapCourierWarehouse(companyId, courierId) {
+  const defaultId = await getCourierDefaultWarehouse(null, companyId, courierId);
+  if (!defaultId) return null;
+  const wh = await getWarehouseById(null, companyId, defaultId);
+  return wh
+    ? { id: wh.id, code: wh.code, name: wh.name }
+    : null;
+}
+
+/** Anbar siyahısı + müştəri bidon xülasəsi */
 router.get('/summary', authorizeRole(['admin', 'courier']), async (req, res) => {
   try {
-    const stock = await getWarehouseStock(null, req.user.company_id);
+    const warehouses = await listWarehouses(null, req.user.company_id);
     const customers = await getCustomersBidonSummary(req.user.company_id);
 
-    let updatedByName = null;
-    if (stock.updated_by) {
-      const u = await pool.query('SELECT name FROM users WHERE id = $1', [stock.updated_by]);
-      updatedByName = u.rows[0]?.name ?? null;
+    let defaultWarehouse = null;
+    if (req.user.role === 'courier') {
+      defaultWarehouse = await mapCourierWarehouse(
+        req.user.company_id,
+        req.user.id
+      );
     }
 
     const lastUpdate = await pool.query(
-      `SELECT wu.*, u.name AS courier_name, cb.name AS created_by_name
+      `SELECT wu.*, u.name AS courier_name, cb.name AS created_by_name,
+              w.code AS warehouse_code, w.name AS warehouse_name
        FROM warehouse_updates wu
        LEFT JOIN users u ON wu.courier_id = u.id
        JOIN users cb ON wu.created_by = cb.id
+       LEFT JOIN warehouses w ON wu.warehouse_id = w.id
        WHERE wu.company_id = $1
        ORDER BY wu.created_at DESC
        LIMIT 1`,
       [req.user.company_id]
     );
 
+    // Köhnə uyğunluq: warehouse = Novxanı (və ya kuryerin default-u)
+    const primary =
+      (defaultWarehouse &&
+        warehouses.find((w) => w.id === defaultWarehouse.id)) ||
+      warehouses.find((w) => w.code === 'novxani') ||
+      warehouses[0] ||
+      null;
+
     res.json({
-      warehouse: {
-        full_count: Number(stock.full_count) || 0,
-        empty_count: Number(stock.empty_count) || 0,
-        pump_count: Number(stock.pump_count) || 0,
-        dispenser_count: Number(stock.dispenser_count) || 0,
-        updated_at: stock.updated_at,
-        updated_by_name: updatedByName,
-      },
+      warehouses,
+      default_warehouse: defaultWarehouse,
+      warehouse: primary,
       customers: {
         total_active_bidons: Number(customers.total_active_bidons) || 0,
         customer_count: Number(customers.customer_count) || 0,
       },
-      last_update: lastUpdate.rows[0] ?? null,
+      last_update: formatWarehouseUpdate(lastUpdate.rows[0] ?? null),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -60,13 +79,16 @@ router.get('/summary', authorizeRole(['admin', 'courier']), async (req, res) => 
 /** Yeniləmə tarixçəsi */
 router.get('/updates', authorizeRole(['admin', 'courier']), async (req, res) => {
   try {
-    const { period, startDate, endDate, courier_id } = req.query;
+    const { period, startDate, endDate, courier_id, warehouse_id, warehouse_code } =
+      req.query;
 
     let query = `
-      SELECT wu.*, u.name AS courier_name, cb.name AS created_by_name
+      SELECT wu.*, u.name AS courier_name, cb.name AS created_by_name,
+             w.code AS warehouse_code, w.name AS warehouse_name
       FROM warehouse_updates wu
       LEFT JOIN users u ON wu.courier_id = u.id
       JOIN users cb ON wu.created_by = cb.id
+      LEFT JOIN warehouses w ON wu.warehouse_id = w.id
       WHERE wu.company_id = $1`;
     const params = [req.user.company_id];
 
@@ -78,46 +100,52 @@ router.get('/updates', authorizeRole(['admin', 'courier']), async (req, res) => 
       query += ` AND wu.courier_id = $${params.length}`;
     }
 
+    if (warehouse_id) {
+      params.push(warehouse_id);
+      query += ` AND wu.warehouse_id = $${params.length}`;
+    } else if (warehouse_code) {
+      params.push(String(warehouse_code).toLowerCase());
+      query += ` AND w.code = $${params.length}`;
+    }
+
     const df = buildDateFilter('wu.created_at', period, startDate, endDate, params);
     query += df.clause + ' ORDER BY wu.created_at DESC LIMIT 200';
 
     const result = await pool.query(query, df.params);
-    res.json({ updates: result.rows });
+    res.json({ updates: result.rows.map(formatWarehouseUpdate) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 /**
- * Su doldurma anbarı yeniləməsi (kuryer).
- * empty_in, full_in — anbara daxil; full_out — götürülən dolu; remaining_full — yerdə qaldı.
+ * Su doldurma (kuryer) — sadə forma:
+ * entry_full, entry_empty, exit_full (+ optional warehouse_id/code)
  */
 router.post('/update', authorizeRole(['courier']), async (req, res) => {
   try {
     const {
-      empty_in,
-      full_in,
-      full_out,
+      warehouse_id,
+      warehouse_code,
+      entry_full,
+      entry_empty,
       exit_full,
-      remaining_full,
-      remaining_empty,
+      full_in,
+      empty_in,
       notes,
     } = req.body;
-
-    if (remaining_full == null || remaining_full === '') {
-      return res.status(400).json({ error: 'remaining_full required (anbarda qalan dolu)' });
-    }
 
     const result = await applyWarehouseUpdate({
       companyId: req.user.company_id,
       courierId: req.user.id,
       createdBy: req.user.id,
-      empty_in,
-      full_in,
-      full_out,
+      warehouse_id,
+      warehouse_code,
+      entry_full,
+      entry_empty,
       exit_full,
-      remaining_full,
-      remaining_empty,
+      full_in,
+      empty_in,
       notes,
     });
 
@@ -129,15 +157,27 @@ router.post('/update', authorizeRole(['courier']), async (req, res) => {
 
     res.status(201).json(result);
   } catch (err) {
-    const status = err.message.includes('must be') ? 400 : 500;
-    res.status(status).json({ error: err.message });
+    const status =
+      err.status ||
+      (err.message.includes('must be') || err.message.includes('cannot be')
+        ? 400
+        : 500);
+    res.status(status).json({ error: err.message, code: err.code ?? undefined });
   }
 });
 
 /** Admin: anbar sayını birbaşa düzəltmək */
 router.patch('/stock', authorizeRole(['admin']), async (req, res) => {
   try {
-    const { full_count, empty_count, pump_count, dispenser_count, notes } = req.body;
+    const {
+      warehouse_id,
+      warehouse_code,
+      full_count,
+      empty_count,
+      pump_count,
+      dispenser_count,
+      notes,
+    } = req.body;
 
     if (full_count == null || empty_count == null) {
       return res.status(400).json({ error: 'full_count and empty_count required' });
@@ -145,6 +185,8 @@ router.patch('/stock', authorizeRole(['admin']), async (req, res) => {
 
     const result = await setWarehouseStockByAdmin({
       companyId: req.user.company_id,
+      warehouse_id,
+      warehouse_code,
       full_count,
       empty_count,
       pump_count,
@@ -162,8 +204,8 @@ router.patch('/stock', authorizeRole(['admin']), async (req, res) => {
       },
     });
   } catch (err) {
-    const status = err.message.includes('must be') ? 400 : 500;
-    res.status(status).json({ error: err.message });
+    const status = err.status || (err.message.includes('must be') ? 400 : 500);
+    res.status(status).json({ error: err.message, code: err.code ?? undefined });
   }
 });
 
