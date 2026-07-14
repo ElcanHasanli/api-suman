@@ -206,18 +206,21 @@ export function buildDebtGivenBox(debtPayments, orders, courierId = null) {
   };
 }
 
+/**
+ * Ödənilməmiş qalıq — həm nişə, həm qismən nağd/kart
+ * (summary.unpaidCreditAmount ilə eyni məntiq).
+ */
 export function buildCreditBox(orders, courierId = null) {
-  const filtered = orders.filter(
-    (o) =>
-      matchesCourier(o, courierId) &&
-      !isPickupOrder(o) &&
-      o.payment_type === 'credit' &&
-      !o.is_paid &&
-      unpaidOrderAmount(o.price, o.amount_paid) > 0.001
-  );
+  const filtered = orders.filter((o) => {
+    if (!matchesCourier(o, courierId) || isPickupOrder(o) || o.is_paid) {
+      return false;
+    }
+    return unpaidOrderAmount(o.price, o.amount_paid) > 0.001;
+  });
 
   const customers = filtered.map((order) => {
     const amount = unpaidOrderAmount(order.price, order.amount_paid);
+    const isCredit = order.payment_type === 'credit';
     return {
       order_id: order.id,
       customer_id: order.customer_id,
@@ -227,6 +230,8 @@ export function buildCreditBox(orders, courierId = null) {
       amount: roundMoney(amount),
       price: roundMoney(order.price),
       amount_paid: roundMoney(order.amount_paid ?? 0),
+      payment_type: order.payment_type,
+      kind: isCredit ? 'credit' : 'partial',
       completed_at: order.completed_at,
     };
   });
@@ -301,21 +306,20 @@ export function buildExpensesBox(expenses, courierId = null) {
 
 export function buildCourierBalanceBox(sales, debtGiven, credit, prepaid, orders, courierId = null) {
   const filtered = orders.filter((o) => matchesCourier(o, courierId) && !isPickupOrder(o));
+
+  // credit.total artıq nişə + qismən ödənilməmişi əhatə edir — iki dəfə çıxılmasın
   const partialUnpaid = roundMoney(
     filtered
-      .filter((o) => o.payment_type !== 'credit' && !o.is_prepaid)
+      .filter((o) => o.payment_type !== 'credit' && !o.is_prepaid && !o.is_paid)
       .reduce((s, o) => s + unpaidOrderAmount(o.price, o.amount_paid), 0)
   );
 
   const total = roundMoney(
-    sales.total + debtGiven.total - credit.total - prepaid.total - partialUnpaid
+    sales.total + debtGiven.total - credit.total - prepaid.total
   );
 
   const collected = roundMoney(
-    filtered.reduce((s, o) => s + orderCollected(o), 0) +
-      (courierId
-        ? debtGiven.total
-        : debtGiven.total)
+    filtered.reduce((s, o) => s + orderCollected(o), 0) + debtGiven.total
   );
 
   return {
@@ -328,7 +332,7 @@ export function buildCourierBalanceBox(sales, debtGiven, credit, prepaid, orders
       prepaid: prepaid.total,
       partial_unpaid: partialUnpaid,
     },
-    note: 'total = satış + borc verildi − nişə − ödənilib − qismən ödənilməmiş nağd/kart',
+    note: 'total = satış + borc verildi − ödənilməmiş (nişə + qismən) − ödənilib',
   };
 }
 

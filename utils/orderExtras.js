@@ -123,68 +123,9 @@ export async function replaceOrderExtras(client, companyId, orderId, extras) {
   return insertOrderExtras(client, companyId, orderId, extras);
 }
 
-export async function adjustWarehouseForExtras(client, companyId, extras, direction = -1) {
-  let pumpDelta = 0;
-  let dispenserDelta = 0;
-
-  for (const item of extras) {
-    if (item.extra_type === 'pump') pumpDelta += item.quantity;
-    if (item.extra_type === 'dispenser') dispenserDelta += item.quantity;
-  }
-
-  if (!pumpDelta && !dispenserDelta) return null;
-
-  const sign = direction < 0 ? -1 : 1;
-
-  // Prefer Novxanı; fallback first warehouse
-  let wh = await client.query(
-    `SELECT id FROM warehouses WHERE company_id = $1 AND code = 'novxani'`,
-    [companyId]
-  );
-  if (!wh.rows.length) {
-    await client.query(
-      `INSERT INTO warehouses (company_id, code, name)
-       VALUES ($1, 'novxani', 'Novxanı'), ($1, 'azadliq', 'Azadlıq')
-       ON CONFLICT (company_id, code) DO NOTHING`,
-      [companyId]
-    );
-    wh = await client.query(
-      `SELECT id FROM warehouses WHERE company_id = $1 AND code = 'novxani'`,
-      [companyId]
-    );
-  }
-
-  const warehouseId = wh.rows[0].id;
-
-  const result = await client.query(
-    `UPDATE warehouses
-     SET pump_count = GREATEST(0, pump_count + $1),
-         dispenser_count = GREATEST(0, dispenser_count + $2),
-         updated_at = NOW()
-     WHERE id = $3
-     RETURNING pump_count, dispenser_count`,
-    [sign * pumpDelta, sign * dispenserDelta, warehouseId]
-  );
-
-  // Sync legacy company stock for pump/dispenser
-  await client.query(
-    `INSERT INTO warehouse_stock (company_id, full_count, empty_count, pump_count, dispenser_count)
-     VALUES ($1, 0, 0, GREATEST(0, $2), GREATEST(0, $3))
-     ON CONFLICT (company_id)
-     DO UPDATE SET
-       pump_count = GREATEST(0, warehouse_stock.pump_count + $4),
-       dispenser_count = GREATEST(0, warehouse_stock.dispenser_count + $5),
-       updated_at = NOW()`,
-    [
-      companyId,
-      Math.max(0, sign * pumpDelta),
-      Math.max(0, sign * dispenserDelta),
-      sign * pumpDelta,
-      sign * dispenserDelta,
-    ]
-  );
-
-  return result.rows[0];
+/** Anbar yalnız bidon (dolu/boş) üçündür — pompa/dispenser anbara toxunmur. */
+export async function adjustWarehouseForExtras() {
+  return null;
 }
 
 export function deriveUnitPrice(order) {

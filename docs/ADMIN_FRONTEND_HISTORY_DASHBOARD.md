@@ -91,11 +91,20 @@ Admin ödənişləri aşağıdakı `debtPayments` siyahısında görünür (`rec
 ```
 
 `debtPayments` (aşağı siyahı) — bütün ödənişlər (kuryer + admin).
-## 3. Nişə
+## 3. Nişə / ödənilməmiş
 
-`payment_type === 'credit'` **və hələ ödənilməmiş** (`is_paid: false`, `remaining_amount > 0`) tamamlanmış sifarişlər.
+`dashboard.credit` — **bütün ödənilməmiş qalıqlar** (nişə + qismən nağd/kart).
 
-Kuryer/admin sonradan müştəri borcunu ödəyəndə (`debt_paid` və ya borclu müştərilər səhifəsi) həmin köhnə nişə sifarişləri avtomatik bağlanır və bu qutudan çıxır.
+`summary.unpaidCreditAmount` ilə **eyni məbləğ** olmalıdır.
+
+| Sahə | Məna |
+|------|------|
+| `kind: "credit"` | Tam nişə (`payment_type: credit`) |
+| `kind: "partial"` | Qismən ödəniş (məs. 22.50-dən 10 ödənib → 12.50) |
+
+Nümunə: qiymət 22.50, `amount_paid: 10` → modalda **12.50** (`kind: partial`).
+
+Kuryer/admin borc ödəyəndə bu sifarişlər bağlanır və qutudan çıxır.
 
 ## 4. Ödənilib
 
@@ -116,4 +125,4 @@ Kuryer/admin sonradan müştəri borcunu ödəyəndə (`debt_paid` və ya borclu
 
 - `docs/ADMIN_FRONTEND_ORDER_EXTRAS.md` — pompa, dispenser, cərimə
 - `docs/ADMIN_FRONTEND_DEBTORS.md` — borclu müştərilər səhifəsi
-- `docs/ADMIN_FRONTEND_WAREHOUSE.md` — anbar pompa/dispenser
+- `docs/ADMIN_FRONTEND_WAREHOUSE.md` — anbar (boş/dolu giriş-çıxış)

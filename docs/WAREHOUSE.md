@@ -1,97 +1,48 @@
-# Su doldurma anbarı (2 məntəqə)
+# Su doldurma anbarı
 
-Şirkətin **2 anbarı** var: **Novxanı** (`novxani`) və **Azadlıq** (`azadliq`).
-Hər kuryerin default anbarı olur; yeniləmədə dəyişmək də olar.
+2 məntəqə: **Novxanı** / **Azadlıq**.
 
-## Kuryer məntiqi (sadə)
-
-Yalnız 3 rəqəm:
+## Yalnız bidon
 
 | Sahə | Məna |
 |------|------|
-| `entry_full` | Anbara **neçə dolu** ilə girdi |
-| `entry_empty` | Anbara **neçə boş** ilə girdi |
-| `exit_full` | Anbardan **neçə dolu** ilə çıxdı |
+| `entry_full` | Anbara neçə **dolu** ilə girdi |
+| `entry_empty` | Anbara neçə **boş** ilə girdi |
+| `exit_full` | Anbardan neçə **dolu** ilə çıxdı |
+| `full_taken` | `exit_full − entry_full` (götürülən dolu) |
 
-```
-full_taken = exit_full − entry_full
-```
+Nümunə: 10 dolu + 5 boş girdi, 20 dolu çıxdı → 10 dolu götürdü.
 
-**Nümunə:** 10 dolu + 5 boş ilə girdi, 20 dolu ilə çıxdı → **10 dolu götürdü**.
+Stok: `empty += entry_empty`, `full -= full_taken`.
 
-Anbar stoku:
-- boş += `entry_empty`
-- dolu −= `full_taken`
+Pompa/dispenser anbara aid deyil.
 
 ## API
 
 | Method | URL | Kim |
 |--------|-----|-----|
 | GET | `/api/warehouse/summary` | admin, kuryer |
-| GET | `/api/warehouse/updates?warehouse_code=&courier_id=` | admin, kuryer |
+| GET | `/api/warehouse/updates` | admin, kuryer |
 | POST | `/api/warehouse/update` | kuryer |
 | PATCH | `/api/warehouse/stock` | admin |
-| PATCH | `/api/couriers/:id/warehouse` | admin (default anbar) |
+| PATCH | `/api/couriers/:id/warehouse` | admin |
 
-### GET `/api/warehouse/summary`
-
-```json
-{
-  "warehouses": [
-    { "id": 1, "code": "novxani", "name": "Novxanı", "full_count": 17, "empty_count": 8 },
-    { "id": 2, "code": "azadliq", "name": "Azadlıq", "full_count": 12, "empty_count": 3 }
-  ],
-  "default_warehouse": { "id": 1, "code": "novxani", "name": "Novxanı" },
-  "warehouse": { "...": "kuryer üçün default / Novxanı (köhnə uyğunluq)" },
-  "customers": { "total_active_bidons": 342, "customer_count": 120 },
-  "last_update": { "...": "..." }
-}
-```
-
-### POST `/api/warehouse/update` (kuryer)
+### POST kuryer
 
 ```json
 {
   "warehouse_code": "novxani",
   "entry_full": 10,
   "entry_empty": 5,
-  "exit_full": 20,
-  "notes": ""
+  "exit_full": 20
 }
 ```
 
-- `warehouse_id` və ya `warehouse_code` — göndərilməsə kuryerin **default** anbarı
-- `exit_full` ≥ `entry_full` olmalıdır
-
-Cavab: `{ warehouse, update, calculation: { full_taken: 10, ... } }`
-
-### PATCH `/api/warehouse/stock` (admin)
+### PATCH admin stock
 
 ```json
-{
-  "warehouse_code": "azadliq",
-  "full_count": 17,
-  "empty_count": 8,
-  "notes": "Sayım"
-}
+{ "warehouse_code": "azadliq", "full_count": 17, "empty_count": 8 }
 ```
-
-### Admin — kuryer default anbar
-
-```http
-PATCH /api/couriers/:id/warehouse
-{ "warehouse_code": "novxani" }
-```
-
-və ya `{ "default_warehouse_id": 1 }`
-
-Login / `/api/auth/me` cavabında kuryerdə: `default_warehouse`.
-
-## Push (admin)
-
-- `type`: `warehouse_updated`
-- `screen`: `warehouse`
-- `warehouse_id`
 
 ## Deploy
 

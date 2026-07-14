@@ -65,8 +65,6 @@ Müştəri sifariş təyin olunanda artıq ödəyibsə:
 
 ## Anbar
 
-Pompa/dispenser satılanda (`extras` ilə) anbar sayı avtomatik azalır.
-
-Anbar idarəetməsi: `PATCH /api/warehouse/stock` — `pump_count`, `dispenser_count` sahələri.
+Su doldurma anbarı yalnız **boş/dolu bidon** üçündür. Pompa/dispenser satışdır (`extras`), anbar stokuna toxunmur.
 
 Ətraflı: `docs/ADMIN_FRONTEND_WAREHOUSE.md`.

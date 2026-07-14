@@ -24,8 +24,6 @@ export function formatWarehouse(row) {
     name: row.name,
     full_count: Number(row.full_count) || 0,
     empty_count: Number(row.empty_count) || 0,
-    pump_count: Number(row.pump_count) || 0,
-    dispenser_count: Number(row.dispenser_count) || 0,
     updated_at: row.updated_at,
     updated_by: row.updated_by ?? null,
   };
@@ -306,19 +304,11 @@ export async function setWarehouseStockByAdmin({
   warehouse_code = null,
   full_count,
   empty_count,
-  pump_count,
-  dispenser_count,
   updatedBy,
   notes = null,
 }) {
   const full = toInt(full_count, 'full_count');
   const empty = toInt(empty_count, 'empty_count');
-  const pump =
-    pump_count != null && pump_count !== '' ? toInt(pump_count, 'pump_count') : null;
-  const dispenser =
-    dispenser_count != null && dispenser_count !== ''
-      ? toInt(dispenser_count, 'dispenser_count')
-      : null;
 
   const client = await pool.connect();
 
@@ -337,8 +327,6 @@ export async function setWarehouseStockByAdmin({
     const stock = locked.rows[0];
     const prevFull = Number(stock.full_count) || 0;
     const prevEmpty = Number(stock.empty_count) || 0;
-    const nextPump = pump ?? (Number(stock.pump_count) || 0);
-    const nextDispenser = dispenser ?? (Number(stock.dispenser_count) || 0);
 
     await client.query(
       `INSERT INTO warehouse_updates (
@@ -362,35 +350,33 @@ export async function setWarehouseStockByAdmin({
       `UPDATE warehouses
        SET full_count = $1,
            empty_count = $2,
-           pump_count = $3,
-           dispenser_count = $4,
            updated_at = NOW(),
-           updated_by = $5
-       WHERE id = $6
+           updated_by = $3
+       WHERE id = $4
        RETURNING *`,
-      [full, empty, nextPump, nextDispenser, updatedBy, warehouse.id]
+      [full, empty, updatedBy, warehouse.id]
     );
 
-    // Köhnə warehouse_stock (pompa/dispenser şirkət səviyyəsi) sync — Novxanı üçün
     if (warehouse.code === 'novxani') {
       await client.query(
         `INSERT INTO warehouse_stock (
-           company_id, full_count, empty_count, pump_count, dispenser_count, updated_at, updated_by
-         ) VALUES ($1, $2, $3, $4, $5, NOW(), $6)
+           company_id, full_count, empty_count, updated_at, updated_by
+         ) VALUES ($1, $2, $3, NOW(), $4)
          ON CONFLICT (company_id)
          DO UPDATE SET
            full_count = EXCLUDED.full_count,
            empty_count = EXCLUDED.empty_count,
-           pump_count = EXCLUDED.pump_count,
-           dispenser_count = EXCLUDED.dispenser_count,
            updated_at = NOW(),
            updated_by = EXCLUDED.updated_by`,
-        [companyId, full, empty, nextPump, nextDispenser, updatedBy]
+        [companyId, full, empty, updatedBy]
       );
     }
 
     await client.query('COMMIT');
-    return { warehouse: formatWarehouse(updateResult.rows[0]), stock: formatWarehouse(updateResult.rows[0]) };
+    return {
+      warehouse: formatWarehouse(updateResult.rows[0]),
+      stock: formatWarehouse(updateResult.rows[0]),
+    };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

@@ -169,15 +169,7 @@ router.post('/update', authorizeRole(['courier']), async (req, res) => {
 /** Admin: anbar sayını birbaşa düzəltmək */
 router.patch('/stock', authorizeRole(['admin']), async (req, res) => {
   try {
-    const {
-      warehouse_id,
-      warehouse_code,
-      full_count,
-      empty_count,
-      pump_count,
-      dispenser_count,
-      notes,
-    } = req.body;
+    const { warehouse_id, warehouse_code, full_count, empty_count, notes } = req.body;
 
     if (full_count == null || empty_count == null) {
       return res.status(400).json({ error: 'full_count and empty_count required' });
@@ -189,8 +181,6 @@ router.patch('/stock', authorizeRole(['admin']), async (req, res) => {
       warehouse_code,
       full_count,
       empty_count,
-      pump_count,
-      dispenser_count,
       updatedBy: req.user.id,
       notes,
     });
