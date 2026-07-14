@@ -1,10 +1,10 @@
 import pool from '../config/database.js';
 
-export const WAREHOUSE_CODES = ['novxani', 'azadliq'];
+export const WAREHOUSE_CODES = ['mikrorayon', 'xirdalan'];
 
 export const WAREHOUSE_LABELS = {
-  novxani: 'Novxanı',
-  azadliq: 'Azadlıq',
+  mikrorayon: 'Mikrorayon',
+  xirdalan: 'Xırdalan',
 };
 
 function toInt(value, fieldName) {
@@ -136,7 +136,7 @@ export async function resolveWarehouseId(client, companyId, {
     if (wh) return wh;
   }
 
-  return getWarehouseByCode(client, companyId, 'novxani');
+  return getWarehouseByCode(client, companyId, 'mikrorayon');
 }
 
 export async function getCustomersBidonSummary(companyId) {
@@ -357,7 +357,7 @@ export async function setWarehouseStockByAdmin({
       [full, empty, updatedBy, warehouse.id]
     );
 
-    if (warehouse.code === 'novxani') {
+    if (warehouse.code === 'mikrorayon') {
       await client.query(
         `INSERT INTO warehouse_stock (
            company_id, full_count, empty_count, updated_at, updated_by
@@ -387,6 +387,6 @@ export async function setWarehouseStockByAdmin({
 
 /** @deprecated — company-level stock; use listWarehouses / getWarehouseById */
 export async function getWarehouseStock(client, companyId) {
-  const wh = await getWarehouseByCode(client, companyId, 'novxani');
+  const wh = await getWarehouseByCode(client, companyId, 'mikrorayon');
   return formatWarehouse(wh);
 }

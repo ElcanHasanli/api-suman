@@ -53,11 +53,11 @@ router.get('/summary', authorizeRole(['admin', 'courier']), async (req, res) => 
       [req.user.company_id]
     );
 
-    // Köhnə uyğunluq: warehouse = Novxanı (və ya kuryerin default-u)
+    // Köhnə uyğunluq: warehouse = Mikrorayon (və ya kuryerin default-u)
     const primary =
       (defaultWarehouse &&
         warehouses.find((w) => w.id === defaultWarehouse.id)) ||
-      warehouses.find((w) => w.code === 'novxani') ||
+      warehouses.find((w) => w.code === 'mikrorayon') ||
       warehouses[0] ||
       null;
 

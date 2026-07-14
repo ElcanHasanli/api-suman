@@ -1,6 +1,6 @@
 # Su doldurma anbarı
 
-2 məntəqə: **Novxanı** / **Azadlıq**.
+2 məntəqə: **Mikrorayon** (`mikrorayon`) / **Xırdalan** (`xirdalan`).
 
 ## Yalnız bidon
 
@@ -14,8 +14,6 @@
 Nümunə: 10 dolu + 5 boş girdi, 20 dolu çıxdı → 10 dolu götürdü.
 
 Stok: `empty += entry_empty`, `full -= full_taken`.
-
-Pompa/dispenser anbara aid deyil.
 
 ## API
 
@@ -31,7 +29,7 @@ Pompa/dispenser anbara aid deyil.
 
 ```json
 {
-  "warehouse_code": "novxani",
+  "warehouse_code": "mikrorayon",
   "entry_full": 10,
   "entry_empty": 5,
   "exit_full": 20
@@ -41,12 +39,13 @@ Pompa/dispenser anbara aid deyil.
 ### PATCH admin stock
 
 ```json
-{ "warehouse_code": "azadliq", "full_count": 17, "empty_count": 8 }
+{ "warehouse_code": "xirdalan", "full_count": 17, "empty_count": 8 }
 ```
 
 ## Deploy
 
 ```bash
 npm run db:migrate:warehouse-locations
+npm run db:migrate:warehouse-rename
 pm2 restart api-suman
 ```

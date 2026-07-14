@@ -1,6 +1,6 @@
 # Admin — Su doldurma anbarı (2 məntəqə)
 
-**Novxanı** və **Azadlıq**. Hər kuryerin default anbarı var.
+**Mikrorayon** və **Xırdalan**. Hər kuryerin default anbarı var.
 
 Əsas: kuryer **neçə boş + dolu** ilə girdi, **neçə dolu** ilə çıxdı.
 
@@ -10,14 +10,14 @@
 
 | Göstərici | Mənbə |
 |-----------|--------|
-| Novxanı / Azadlıq dolu | `warehouses[].full_count` |
-| Novxanı / Azadlıq boş | `warehouses[].empty_count` |
+| Mikrorayon / Xırdalan dolu | `warehouses[].full_count` |
+| Mikrorayon / Xırdalan boş | `warehouses[].empty_count` |
 | Müştərilərdə bidon | `customers.total_active_bidons` |
 | Son yeniləmə | `last_update` |
 
 ## Kuryer yeniləməsi
 
-`GET /api/warehouse/updates?warehouse_code=novxani&period=today`
+`GET /api/warehouse/updates?warehouse_code=mikrorayon&period=today`
 
 | Sahə | Məna |
 |------|------|
@@ -25,16 +25,16 @@
 | `entry_empty` | Neçə boş ilə girdi |
 | `exit_full` | Neçə dolu ilə çıxdı |
 | `full_taken` | Anbardan götürülən (`exit_full − entry_full`) |
-| `warehouse_name` | Novxanı / Azadlıq |
+| `warehouse_name` | Mikrorayon / Xırdalan |
 
-**Nümunə:** `Elnur · Novxanı · girdi 10 dolu + 5 boş · çıxdı 20 dolu · götürdü 10`
+**Nümunə:** `Elnur · Mikrorayon · girdi 10 dolu + 5 boş · çıxdı 20 dolu · götürdü 10`
 
 ## Admin düzəlişi
 
 ```http
 PATCH /api/warehouse/stock
 {
-  "warehouse_code": "azadliq",
+  "warehouse_code": "xirdalan",
   "full_count": 17,
   "empty_count": 8,
   "notes": "..."
@@ -47,12 +47,13 @@ Yalnız `full_count` + `empty_count`.
 
 ```http
 PATCH /api/couriers/26/warehouse
-{ "warehouse_code": "novxani" }
+{ "warehouse_code": "mikrorayon" }
 ```
 
 ## Deploy
 
 ```bash
 npm run db:migrate:warehouse-locations
+npm run db:migrate:warehouse-rename
 pm2 restart api-suman
 ```

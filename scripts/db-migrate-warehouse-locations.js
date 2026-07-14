@@ -5,8 +5,8 @@
 import pool from '../config/database.js';
 
 const WAREHOUSE_DEFS = [
-  { code: 'novxani', name: 'Novxanı' },
-  { code: 'azadliq', name: 'Azadlıq' },
+  { code: 'mikrorayon', name: 'Mikrorayon' },
+  { code: 'xirdalan', name: 'Xırdalan' },
 ];
 
 async function migrate() {
@@ -65,7 +65,7 @@ async function migrate() {
 
       for (let i = 0; i < WAREHOUSE_DEFS.length; i++) {
         const def = WAREHOUSE_DEFS[i];
-        // Mövcud stoku ilk anbara (Novxanı) köçür
+        // Mövcud stoku ilk anbara (Mikrorayon) köçür
         const full = i === 0 ? Number(prev.full_count) || 0 : 0;
         const empty = i === 0 ? Number(prev.empty_count) || 0 : 0;
         const pump = i === 0 ? Number(prev.pump_count) || 0 : 0;
@@ -91,7 +91,7 @@ async function migrate() {
       }
     }
 
-    // Köhnə update-ləri Novxanı ilə bağla
+    // Köhnə update-ləri Mikrorayon ilə bağla
     await pool.query(`
       UPDATE warehouse_updates wu
       SET warehouse_id = w.id,
@@ -107,11 +107,11 @@ async function migrate() {
           )
       FROM warehouses w
       WHERE w.company_id = wu.company_id
-        AND w.code = 'novxani'
+        AND w.code = 'mikrorayon'
         AND wu.warehouse_id IS NULL;
     `);
 
-    console.log('✅ warehouses (novxani, azadliq) + default_warehouse_id hazırdır');
+    console.log('✅ warehouses (mikrorayon, xirdalan) + default_warehouse_id hazırdır');
   } catch (err) {
     console.error('❌', err.message);
     process.exit(1);
