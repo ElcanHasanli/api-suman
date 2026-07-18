@@ -9,6 +9,7 @@ import {
   getCustomersBidonSummary,
   getWarehouseById,
   listWarehouses,
+  normalizeWarehouseCode,
   setWarehouseStockByAdmin,
 } from '../utils/warehouse.js';
 import { notifyAdminsWarehouseUpdated } from '../lib/notifyAdmins.js';
@@ -104,7 +105,7 @@ router.get('/updates', authorizeRole(['admin', 'courier']), async (req, res) => 
       params.push(warehouse_id);
       query += ` AND wu.warehouse_id = $${params.length}`;
     } else if (warehouse_code) {
-      params.push(String(warehouse_code).toLowerCase());
+      params.push(normalizeWarehouseCode(warehouse_code));
       query += ` AND w.code = $${params.length}`;
     }
 

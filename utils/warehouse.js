@@ -7,6 +7,14 @@ export const WAREHOUSE_LABELS = {
   xirdalan: 'Xırdalan',
 };
 
+/** Köhnə kodları (novxani/azadliq) yeniyə map edir */
+export function normalizeWarehouseCode(code) {
+  const c = String(code || '').trim().toLowerCase();
+  if (c === 'novxani') return 'mikrorayon';
+  if (c === 'azadliq') return 'xirdalan';
+  return c;
+}
+
 function toInt(value, fieldName) {
   const n = Number(value);
   if (!Number.isInteger(n) || n < 0) {
@@ -121,7 +129,7 @@ export async function resolveWarehouseId(client, companyId, {
   }
 
   if (warehouse_code) {
-    const code = String(warehouse_code).trim().toLowerCase();
+    const code = normalizeWarehouseCode(warehouse_code);
     if (!WAREHOUSE_CODES.includes(code)) {
       throw Object.assign(
         new Error(`warehouse_code must be ${WAREHOUSE_CODES.join(' or ')}`),

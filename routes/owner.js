@@ -3,10 +3,98 @@ import bcrypt from 'bcryptjs';
 import pool from '../config/database.js';
 import { authenticateToken, authorizeRole } from '../middleware/auth.js';
 import { generateLicenseCode } from '../utils/company.js';
+import {
+  getLiveOverview,
+  getLiveFeed,
+  getCompanyMonitor,
+  getCompanyHistory,
+  getCompanyOrders,
+  getCompanyWarehouse,
+} from '../utils/ownerMonitor.js';
 
 const router = express.Router();
 
 router.use(authenticateToken, authorizeRole(['owner']));
+
+function sendMonitorError(res, err) {
+  const status = err.status || 500;
+  res.status(status).json({ error: err.message });
+}
+
+/** Canlı monitor — /live* /companies/:id-dən əvvəl (route toqquşması olmasın) */
+router.get('/live', async (req, res) => {
+  try {
+    const { period = 'today', startDate, endDate } = req.query;
+    const data = await getLiveOverview(period, startDate || null, endDate || null);
+    res.json(data);
+  } catch (err) {
+    sendMonitorError(res, err);
+  }
+});
+
+router.get('/live/feed', async (req, res) => {
+  try {
+    const { company_id: companyId, limit, since } = req.query;
+    const data = await getLiveFeed({
+      companyId: companyId || null,
+      limit: limit || 50,
+      since: since || null,
+    });
+    res.json(data);
+  } catch (err) {
+    sendMonitorError(res, err);
+  }
+});
+
+router.get('/companies/:id/monitor', async (req, res) => {
+  try {
+    const { period = 'today', startDate, endDate } = req.query;
+    const data = await getCompanyMonitor(req.params.id, {
+      period,
+      startDate: startDate || null,
+      endDate: endDate || null,
+    });
+    res.json(data);
+  } catch (err) {
+    sendMonitorError(res, err);
+  }
+});
+
+router.get('/companies/:id/history', async (req, res) => {
+  try {
+    const { period = 'today', startDate, endDate } = req.query;
+    const data = await getCompanyHistory(req.params.id, {
+      period,
+      startDate: startDate || null,
+      endDate: endDate || null,
+    });
+    res.json(data);
+  } catch (err) {
+    sendMonitorError(res, err);
+  }
+});
+
+router.get('/companies/:id/orders', async (req, res) => {
+  try {
+    const { status, limit } = req.query;
+    const data = await getCompanyOrders(req.params.id, {
+      status: status || null,
+      limit: limit || 100,
+    });
+    res.json(data);
+  } catch (err) {
+    sendMonitorError(res, err);
+  }
+});
+
+router.get('/companies/:id/warehouse', async (req, res) => {
+  try {
+    const data = await getCompanyWarehouse(req.params.id);
+    res.json(data);
+  } catch (err) {
+    sendMonitorError(res, err);
+  }
+});
 
 router.get('/companies', async (req, res) => {
   try {

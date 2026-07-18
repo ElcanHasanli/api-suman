@@ -90,7 +90,13 @@ npm run db:seed
 - `GET /api/owner/companies/:id/users`
 - `PUT /api/owner/companies/:id/users/:userId` — redaktə (şifrə opsional)
 - `DELETE /api/owner/companies/:id/users/:userId` — sil
-
+- `GET /api/owner/live` — bütün şirkətlərin günün icmalı (canlı monitor)
+- `GET /api/owner/live/feed` — son əməliyyatlar (`?company_id=&since=&limit=`)
+- `GET /api/owner/companies/:id/monitor` — şirkət detal + dashboard
+- `GET /api/owner/companies/:id/history` — history dashboard
+- `GET /api/owner/companies/:id/orders` — sifarişlər
+- `GET /api/owner/companies/:id/warehouse` — anbarlar + son update-lər
+- Frontend: `docs/OWNER_FRONTEND_LIVE_MONITOR.md`
 ### Müştərilər (admin CRUD)
 - `GET /api/customers` — siyahı
 - `GET /api/customers/search?q=` — sifariş yaradarkən axtarış: ad, telefon, **ünvan** (ünvan uyğunluqları əvvəl)
