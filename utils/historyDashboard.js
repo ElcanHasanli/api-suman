@@ -3,6 +3,7 @@ import { deriveUnitPrice, EXTRA_LABELS } from './orderExtras.js';
 import { formatCustomerDisplay } from './customerName.js';
 import { formatExpenseRow } from './expenseFormat.js';
 import { isPickupOrder } from './orderTypes.js';
+import { buildDepositsBox } from './customerDeposit.js';
 
 function roundMoney(value) {
   return Number(Number(value).toFixed(2));
@@ -409,7 +410,14 @@ export function buildBidonsTakenBox(orders, courierId = null) {
   };
 }
 
-export function buildHistoryDashboard({ orders, debtPayments, expenses, courierId = null }) {
+export function buildHistoryDashboard({
+  orders,
+  debtPayments,
+  expenses,
+  depositEntries = [],
+  depositCurrentTotal = null,
+  courierId = null,
+}) {
   const sales = buildSalesBox(orders, courierId);
   const debtGiven = buildDebtGivenBox(debtPayments, orders, courierId);
   const credit = buildCreditBox(orders, courierId);
@@ -426,6 +434,8 @@ export function buildHistoryDashboard({ orders, debtPayments, expenses, courierI
   const netBalance = buildNetBalanceBox(courierBalance, expensesBox);
   const bidonsSold = buildBidonsSoldBox(orders, courierId);
   const bidonsTaken = buildBidonsTakenBox(orders, courierId);
+  // Depozit şirkət səviyyəsindədir — kuryer filterində də eyni (admin əməliyyatı)
+  const deposits = buildDepositsBox(depositEntries, depositCurrentTotal);
 
   return {
     sales,
@@ -437,6 +447,7 @@ export function buildHistoryDashboard({ orders, debtPayments, expenses, courierI
     net_balance: netBalance,
     bidons_sold: bidonsSold,
     bidons_taken: bidonsTaken,
+    deposits,
   };
 }
 
@@ -462,10 +473,13 @@ export function buildPerCourierDashboard({ orders, debtPayments, expenses }) {
       courierId,
     });
 
+    // Depozit şirkət səviyyəsindədir — kuryer kartında göstərilmir
+    const { deposits: _deposits, ...rest } = dashboard;
+
     return {
       courier_id: courierId,
       courier_name: courierName,
-      ...dashboard,
+      ...rest,
     };
   });
 

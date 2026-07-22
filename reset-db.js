@@ -14,6 +14,7 @@ async function dropBusinessTables(client) {
     DROP TABLE IF EXISTS customer_inactivity_alerts CASCADE;
     DROP TABLE IF EXISTS notifications CASCADE;
     DROP TABLE IF EXISTS order_notes CASCADE;
+    DROP TABLE IF EXISTS deposit_entries CASCADE;
     DROP TABLE IF EXISTS debt_payments CASCADE;
     DROP TABLE IF EXISTS expenses CASCADE;
     DROP TABLE IF EXISTS warehouse_updates CASCADE;
@@ -86,6 +87,8 @@ async function createSchema(client) {
       price DECIMAL(10, 2) DEFAULT 0,
       active_bidons INT DEFAULT 0,
       debt DECIMAL(10, 2) DEFAULT 0,
+      deposit DECIMAL(10, 2) NOT NULL DEFAULT 0,
+      notes TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -165,6 +168,23 @@ async function createSchema(client) {
       recorded_by INT NOT NULL REFERENCES users(id),
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE deposit_entries (
+      id SERIAL PRIMARY KEY,
+      company_id INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      customer_id INT REFERENCES customers(id) ON DELETE SET NULL,
+      customer_name VARCHAR(255),
+      amount DECIMAL(10, 2) NOT NULL,
+      previous_deposit DECIMAL(10, 2) NOT NULL DEFAULT 0,
+      new_deposit DECIMAL(10, 2) NOT NULL DEFAULT 0,
+      entry_type VARCHAR(30) NOT NULL,
+      notes TEXT,
+      recorded_by INT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_deposit_entries_company_created
+      ON deposit_entries(company_id, created_at DESC);
 
     CREATE TABLE warehouses (
       id SERIAL PRIMARY KEY,

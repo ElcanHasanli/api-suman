@@ -12,6 +12,10 @@ import {
   buildPerCourierDashboard,
 } from '../utils/historyDashboard.js';
 import { fetchOrderExtras } from '../utils/orderExtras.js';
+import {
+  fetchCompanyDepositTotal,
+  mapDepositEntry,
+} from '../utils/customerDeposit.js';
 
 const router = express.Router();
 
@@ -162,6 +166,19 @@ async function fetchDebtPayments(period, startDate, endDate, companyId) {
   return result.rows;
 }
 
+async function fetchDepositEntries(period, startDate, endDate, companyId) {
+  let query = `
+    SELECT de.*, u.name AS recorded_by_name
+    FROM deposit_entries de
+    LEFT JOIN users u ON u.id = de.recorded_by
+    WHERE de.company_id = $1`;
+  const params = [companyId];
+  const df = buildDateFilter('de.created_at', period, startDate, endDate, params);
+  query += df.clause + ' ORDER BY de.created_at DESC';
+  const result = await pool.query(query, df.params);
+  return result.rows.map(mapDepositEntry);
+}
+
 async function fetchCouriers(companyId) {
   const result = await pool.query(
     `SELECT id, name FROM users
@@ -188,17 +205,22 @@ router.get('/dashboard', async (req, res) => {
     const { period = 'today', startDate, endDate, courier_id: courierId } = req.query;
     const companyId = req.user.company_id;
 
-    const [orders, expenses, debtPayments, couriers] = await Promise.all([
-      fetchHistoryOrders(period, startDate, endDate, companyId, courierId || null),
-      fetchExpenses(period, startDate, endDate, companyId, courierId || null),
-      fetchDebtPayments(period, startDate, endDate, companyId),
-      fetchCouriers(companyId),
-    ]);
+    const [orders, expenses, debtPayments, depositEntries, depositTotals, couriers] =
+      await Promise.all([
+        fetchHistoryOrders(period, startDate, endDate, companyId, courierId || null),
+        fetchExpenses(period, startDate, endDate, companyId, courierId || null),
+        fetchDebtPayments(period, startDate, endDate, companyId),
+        fetchDepositEntries(period, startDate, endDate, companyId),
+        fetchCompanyDepositTotal(companyId),
+        fetchCouriers(companyId),
+      ]);
 
     const dashboard = buildHistoryDashboard({
       orders,
       debtPayments,
       expenses,
+      depositEntries,
+      depositCurrentTotal: depositTotals.current_total,
       courierId: courierId || null,
     });
 
@@ -221,18 +243,23 @@ router.get('/', async (req, res) => {
     const { period = 'today', startDate, endDate, courier_id: courierId } = req.query;
     const companyId = req.user.company_id;
 
-    const [orders, expenses, debtPayments, couriers] = await Promise.all([
-      fetchHistoryOrders(period, startDate, endDate, companyId, courierId || null),
-      fetchExpenses(period, startDate, endDate, companyId, courierId || null),
-      fetchDebtPayments(period, startDate, endDate, companyId),
-      fetchCouriers(companyId),
-    ]);
+    const [orders, expenses, debtPayments, depositEntries, depositTotals, couriers] =
+      await Promise.all([
+        fetchHistoryOrders(period, startDate, endDate, companyId, courierId || null),
+        fetchExpenses(period, startDate, endDate, companyId, courierId || null),
+        fetchDebtPayments(period, startDate, endDate, companyId),
+        fetchDepositEntries(period, startDate, endDate, companyId),
+        fetchCompanyDepositTotal(companyId),
+        fetchCouriers(companyId),
+      ]);
 
     const summary = buildFullSummary(summarizeOrders(orders), expenses, debtPayments);
     const dashboard = buildHistoryDashboard({
       orders,
       debtPayments,
       expenses,
+      depositEntries,
+      depositCurrentTotal: depositTotals.current_total,
       courierId: courierId || null,
     });
 
@@ -248,6 +275,8 @@ router.get('/', async (req, res) => {
       orders: orders.map(mapHistoryOrder),
       expenses,
       debtPayments,
+      depositEntries,
+      deposit_totals: depositTotals,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

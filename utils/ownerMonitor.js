@@ -8,6 +8,10 @@ import { fetchOrderExtras } from './orderExtras.js';
 import { formatExpenseRow } from './expenseFormat.js';
 import { listWarehouses, formatWarehouseUpdate } from './warehouse.js';
 import { formatCustomerDisplay } from './customerName.js';
+import {
+  fetchCompanyDepositTotal,
+  mapDepositEntry,
+} from './customerDeposit.js';
 
 function roundMoney(value) {
   return Number(Number(value).toFixed(2));
@@ -73,6 +77,19 @@ async function fetchDebtPayments(period, startDate, endDate, companyId) {
   return result.rows;
 }
 
+async function fetchDepositEntries(period, startDate, endDate, companyId) {
+  let query = `
+    SELECT de.*, u.name AS recorded_by_name
+    FROM deposit_entries de
+    LEFT JOIN users u ON u.id = de.recorded_by
+    WHERE de.company_id = $1`;
+  const params = [companyId];
+  const df = buildDateFilter('de.created_at', period, startDate, endDate, params);
+  query += df.clause + ' ORDER BY de.created_at DESC';
+  const result = await pool.query(query, df.params);
+  return result.rows.map(mapDepositEntry);
+}
+
 function mapOrderRow(row) {
   return {
     ...row,
@@ -95,11 +112,21 @@ export async function getCompanyMonitor(companyId, {
 } = {}) {
   const company = await assertCompanyExists(companyId);
 
-  const [orders, expenses, debtPayments, activeOrders, warehouses, couriers] =
-    await Promise.all([
+  const [
+    orders,
+    expenses,
+    debtPayments,
+    depositEntries,
+    depositTotals,
+    activeOrders,
+    warehouses,
+    couriers,
+  ] = await Promise.all([
       fetchCompletedOrders(period, startDate, endDate, companyId),
       fetchExpenses(period, startDate, endDate, companyId),
       fetchDebtPayments(period, startDate, endDate, companyId),
+      fetchDepositEntries(period, startDate, endDate, companyId),
+      fetchCompanyDepositTotal(companyId),
       pool.query(
         `SELECT o.*,
                 c.name, c.surname, c.phone AS customer_phone, c.debt AS customer_debt,
@@ -126,6 +153,8 @@ export async function getCompanyMonitor(companyId, {
     orders,
     debtPayments,
     expenses,
+    depositEntries,
+    depositCurrentTotal: depositTotals.current_total,
   });
 
   return {
@@ -158,10 +187,13 @@ export async function getLiveOverview(period = 'today', startDate = null, endDat
 
   const snapshots = await Promise.all(
     companies.rows.map(async (company) => {
-      const [orders, expenses, debtPayments, activeCount] = await Promise.all([
+      const [orders, expenses, debtPayments, depositEntries, depositTotals, activeCount] =
+        await Promise.all([
         fetchCompletedOrders(period, startDate, endDate, company.id),
         fetchExpenses(period, startDate, endDate, company.id),
         fetchDebtPayments(period, startDate, endDate, company.id),
+        fetchDepositEntries(period, startDate, endDate, company.id),
+        fetchCompanyDepositTotal(company.id),
         pool.query(
           `SELECT COUNT(*)::int AS n FROM orders
            WHERE company_id = $1 AND status IN ('pending', 'assigned', 'in_progress')`,
@@ -169,7 +201,13 @@ export async function getLiveOverview(period = 'today', startDate = null, endDat
         ),
       ]);
 
-      const dashboard = buildHistoryDashboard({ orders, debtPayments, expenses });
+      const dashboard = buildHistoryDashboard({
+        orders,
+        debtPayments,
+        expenses,
+        depositEntries,
+        depositCurrentTotal: depositTotals.current_total,
+      });
 
       return {
         company_id: company.id,
@@ -184,6 +222,8 @@ export async function getLiveOverview(period = 'today', startDate = null, endDat
         courier_balance: dashboard.courier_balance.total,
         expenses: dashboard.expenses.total,
         net_balance: dashboard.net_balance.total,
+        deposits_entered: dashboard.deposits.entered,
+        deposit_current_total: depositTotals.current_total,
       };
     })
   );
@@ -486,20 +526,31 @@ export async function getCompanyHistory(companyId, {
   endDate = null,
 } = {}) {
   await assertCompanyExists(companyId);
-  const [orders, expenses, debtPayments] = await Promise.all([
+  const [orders, expenses, debtPayments, depositEntries, depositTotals] =
+    await Promise.all([
     fetchCompletedOrders(period, startDate, endDate, companyId),
     fetchExpenses(period, startDate, endDate, companyId),
     fetchDebtPayments(period, startDate, endDate, companyId),
+    fetchDepositEntries(period, startDate, endDate, companyId),
+    fetchCompanyDepositTotal(companyId),
   ]);
 
   return {
     period,
     startDate,
     endDate,
-    dashboard: buildHistoryDashboard({ orders, debtPayments, expenses }),
+    dashboard: buildHistoryDashboard({
+      orders,
+      debtPayments,
+      expenses,
+      depositEntries,
+      depositCurrentTotal: depositTotals.current_total,
+    }),
     by_courier: buildPerCourierDashboard({ orders, debtPayments, expenses }),
     orders: orders.map(mapOrderRow),
     expenses,
     debtPayments,
+    depositEntries,
+    deposit_totals: depositTotals,
   };
 }

@@ -31,6 +31,7 @@ Cavabda `couriers` — filter dropdown üçün kuryer siyahısı.
 | 7. Qalıq | `dashboard.net_balance` | Kuryerdə qalıq − Xərclər |
 | 8. Satılan bidon | `dashboard.bidons_sold` | Verilən **dolu** bidon sayı |
 | 9. Götürülən bidon | `dashboard.bidons_taken` | Müştəridən alınan **boş** bidon sayı |
+| 10. Depozit | `dashboard.deposits` | Periodda daxil/çıxan depozit + ümumi cəm |
 
 ### Düstur
 
@@ -170,15 +171,32 @@ Pul qutularının **yanında** göstərin — məbləğ AZN deyil, **ədəd**.
 
 Anbardan götürülən dolu (`warehouse full_taken`) bu qutularda **yoxdur** — anbar səhifəsindədir.
 
+## 10. Depozit qutusu
+
+Period üzrə daxil olan / çıxan depozit. Tam sənəd: `docs/ADMIN_FRONTEND_CUSTOMER_DEPOSIT.md`.
+
+```json
+{
+  "deposits": {
+    "entered": 120,
+    "removed": 40,
+    "net": 80,
+    "current_total": 1540.5,
+    "entries": [...]
+  }
+}
+```
+
 ## UI tövsiyəsi
 
 1. Yuxarıda period + kuryer filteri
-2. 7 pul kartı + **2 bidon kartı** (yan-yana və ya eyni sırada)
-3. Satış, Xərclər, Bidon kartlarına klik → modal
-4. Aşağıda köhnə `orders`, `expenses`, `debtPayments` siyahıları (istəyə görə)
+2. 7 pul kartı + **2 bidon** + **1 depozit** kartı
+3. Satış, Xərclər, Bidon, Depozit kartlarına klik → modal
+4. Aşağıda köhnə `orders`, `expenses`, `debtPayments`, `depositEntries` siyahıları (istəyə görə)
 
 ## Əlaqəli sənədlər
 
+- `docs/ADMIN_FRONTEND_CUSTOMER_DEPOSIT.md` — depozit + müştəri qeydi
 - `docs/ADMIN_FRONTEND_ORDER_EXTRAS.md` — pompa, dispenser, cərimə
 - `docs/ADMIN_FRONTEND_DEBTORS.md` — borclu müştərilər səhifəsi
 - `docs/ADMIN_FRONTEND_WAREHOUSE.md` — anbar (boş/dolu giriş-çıxış)

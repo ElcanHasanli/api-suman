@@ -41,6 +41,8 @@ Cədvəldə sətirə klik / “Detallar” → detal səhifəsi və ya modal.
     "price": "3.00",
     "active_bidons": 3,
     "debt": "6.00",
+    "deposit": 20,
+    "notes": "2 bidon — depozit 20",
     "created_at": "2026-06-27T...",
     "updated_at": "2026-06-27T..."
   },
@@ -117,8 +119,13 @@ Sifariş sətirinə klik → mövcud sifariş detal ekranı.
 - Tarix, ödənilən məbləğ (`amount`), əvvəlki / yeni borc
 - Kim qeyd edib: `recorded_by_name`
 
+### Depozit / qeyd
+- `customer.deposit`, `customer.notes`
+- `deposit_entries` — depozit tarixçəsi (max 50)
+- Tam sənəd: `docs/ADMIN_FRONTEND_CUSTOMER_DEPOSIT.md`
+
 ### Əməliyyatlar
-- **Redaktə:** mövcud `PUT /api/customers/:id` formu
+- **Redaktə:** mövcud `PUT /api/customers/:id` formu (`deposit`, `notes` daxil)
 - **Yeni sifariş:** `POST /api/orders` + `customer_id`
 
 ---
@@ -135,6 +142,7 @@ Tövsiyə olunan sütunlar:
 | Qiymət | `price` |
 | Bidon | `active_bidons` |
 | Borc | `debt` |
+| Depozit | `deposit` |
 
 Ünvan cədvəldə qısa, **detalda tam** göstərin.
 

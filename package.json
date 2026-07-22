@@ -26,6 +26,7 @@
     "db:migrate:order-type": "node scripts/db-migrate-order-type-scheduled.js",
     "db:migrate:order-debt-payment": "node scripts/db-migrate-order-debt-payment.js",
     "db:migrate:history-dashboard": "node scripts/db-migrate-history-dashboard.js",
+    "db:migrate:customer-deposit": "node scripts/db-migrate-customer-deposit.js",
     "db:repair:settle-paid-debt": "node scripts/db-repair-settle-paid-debt.js",
     "import:whatsapp": "node scripts/import-whatsapp-customers.js",
     "db:purge-customers-only": "node scripts/db-purge-except-customers.js",
