@@ -15,6 +15,8 @@
 **Ümumi depozit** = bütün müştərilərin `deposit` cəmi.  
 Müştəri silinəndə onun depoziti cəmdən avtomatik çıxır; tarixçədə mənfi qeyd qalır (`entry_type: delete`).
 
+Kuryer də sifarişdə görür (`customer_deposit`, `customer_notes`) — yalnız oxumaq: `docs/COURIER_FRONTEND_CUSTOMER_DEPOSIT.md`.
+
 ---
 
 ## API

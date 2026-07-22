@@ -51,6 +51,7 @@ const orderListSelect = `
   SELECT o.*,
          c.name, c.surname, c.phone AS customer_phone, c.phone2 AS customer_phone2,
          c.address AS customer_address, c.active_bidons, c.debt,
+         c.deposit AS customer_deposit, c.notes AS customer_notes,
          u.name AS courier_name
   FROM orders o
   LEFT JOIN customers c ON o.customer_id = c.id
@@ -96,6 +97,9 @@ function enrichOrderRow(order, user = null) {
         ? Math.max(0, orderPrice - prepaidAmount)
         : unpaidOrderAmount(orderPrice, orderAmountPaid),
     customer_debt: customerDebt,
+    customer_deposit:
+      order.customer_deposit != null ? Number(order.customer_deposit) : 0,
+    customer_notes: order.customer_notes ?? null,
     debt_paid_at_completion: debtPaidAtCompletion,
     total_collected: orderAmountPaid + debtPaidAtCompletion,
     is_prepaid: Boolean(order.is_prepaid),

@@ -12,6 +12,8 @@ Kuryer aktiv sifarişlərdə müştərinin telefonunu görür və WhatsApp ilə 
 | `customer_phone2` | İkinci telefon (varsa) |
 | `customer_display_name` | Ad Soyad |
 | `customer_address` | Ünvan |
+| `customer_deposit` | Depozit (AZN) — bax: `COURIER_FRONTEND_CUSTOMER_DEPOSIT.md` |
+| `customer_notes` | Müştəri qeydi |
 | `whatsapp_url` | `https://wa.me/994501234567` |
 | `whatsapp_url_phone2` | İkinci nömrə üçün (varsa) |
 
@@ -31,6 +33,7 @@ Telefon sütununu göstərin — kuryer zəng/mesaj üçün istifadə edəcək.
 Müştəri blokunda:
 - Ad: `customer_display_name`
 - Telefon: kliklənən link
+- Depozit / qeyd: `customer_deposit`, `customer_notes`
 
 ```tsx
 // React nümunəsi
