@@ -345,6 +345,70 @@ export function buildNetBalanceBox(courierBalance, expenses) {
   };
 }
 
+/**
+ * Satılan bidon — tamamlanmış çatdırılmada müştəriyə verilən dolu (`full_bidons_given`).
+ * Pickup sifarişlər daxil deyil.
+ */
+export function buildBidonsSoldBox(orders, courierId = null) {
+  const filtered = orders.filter(
+    (o) => matchesCourier(o, courierId) && !isPickupOrder(o)
+  );
+
+  const items = filtered
+    .map((order) => {
+      const bidons =
+        Number(order.full_bidons_given ?? order.bidons_count ?? 0) || 0;
+      return {
+        order_id: order.id,
+        customer: customerLabel(order),
+        courier_id: order.courier_id,
+        courier_name: order.courier_name,
+        bidons,
+        completed_at: order.completed_at,
+      };
+    })
+    .filter((row) => row.bidons > 0);
+
+  return {
+    total: items.reduce((s, row) => s + row.bidons, 0),
+    count: items.length,
+    unit: 'bidon',
+    label: 'Satılan bidon',
+    items,
+  };
+}
+
+/**
+ * Götürülən bidon — müştəridən alınan boş (`empty_bidons_returned`).
+ * Çatdırılma + pickup daxildir.
+ */
+export function buildBidonsTakenBox(orders, courierId = null) {
+  const filtered = orders.filter((o) => matchesCourier(o, courierId));
+
+  const items = filtered
+    .map((order) => {
+      const bidons = Number(order.empty_bidons_returned) || 0;
+      return {
+        order_id: order.id,
+        customer: customerLabel(order),
+        courier_id: order.courier_id,
+        courier_name: order.courier_name,
+        bidons,
+        order_type: order.order_type ?? 'delivery',
+        completed_at: order.completed_at,
+      };
+    })
+    .filter((row) => row.bidons > 0);
+
+  return {
+    total: items.reduce((s, row) => s + row.bidons, 0),
+    count: items.length,
+    unit: 'bidon',
+    label: 'Götürülən bidon',
+    items,
+  };
+}
+
 export function buildHistoryDashboard({ orders, debtPayments, expenses, courierId = null }) {
   const sales = buildSalesBox(orders, courierId);
   const debtGiven = buildDebtGivenBox(debtPayments, orders, courierId);
@@ -360,6 +424,8 @@ export function buildHistoryDashboard({ orders, debtPayments, expenses, courierI
     courierId
   );
   const netBalance = buildNetBalanceBox(courierBalance, expensesBox);
+  const bidonsSold = buildBidonsSoldBox(orders, courierId);
+  const bidonsTaken = buildBidonsTakenBox(orders, courierId);
 
   return {
     sales,
@@ -369,6 +435,8 @@ export function buildHistoryDashboard({ orders, debtPayments, expenses, courierI
     courier_balance: courierBalance,
     expenses: expensesBox,
     net_balance: netBalance,
+    bidons_sold: bidonsSold,
+    bidons_taken: bidonsTaken,
   };
 }
 

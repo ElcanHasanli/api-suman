@@ -1,4 +1,4 @@
-# Admin — Tarixçə dashboard (7 qutu)
+# Admin — Tarixçə dashboard (7 pul qutu + 2 bidon)
 
 Yeni tarixçə səhifəsi `GET /api/history` və ya yalnız qutular üçün `GET /api/history/dashboard` ilə işləyir.
 
@@ -18,7 +18,7 @@ GET /api/history/dashboard?period=today&courier_id=3
 
 Cavabda `couriers` — filter dropdown üçün kuryer siyahısı.
 
-## 7 qutu (`dashboard`)
+## Qutular (`dashboard`)
 
 | Qutu | API sahəsi | Məna |
 |------|------------|------|
@@ -29,6 +29,8 @@ Cavabda `couriers` — filter dropdown üçün kuryer siyahısı.
 | 5. Kuryerdə qalıq | `dashboard.courier_balance` | (Satış + Borc verildi) − (Nişə + Ödənilib + qismən nağd/kart qalığı) |
 | 6. Xərclər | `dashboard.expenses` | Admin və kuryer xərcləri |
 | 7. Qalıq | `dashboard.net_balance` | Kuryerdə qalıq − Xərclər |
+| 8. Satılan bidon | `dashboard.bidons_sold` | Verilən **dolu** bidon sayı |
+| 9. Götürülən bidon | `dashboard.bidons_taken` | Müştəridən alınan **boş** bidon sayı |
 
 ### Düstur
 
@@ -91,6 +93,7 @@ Admin ödənişləri aşağıdakı `debtPayments` siyahısında görünür (`rec
 ```
 
 `debtPayments` (aşağı siyahı) — bütün ödənişlər (kuryer + admin).
+
 ## 3. Nişə / ödənilməmiş
 
 `dashboard.credit` — **bütün ödənilməmiş qalıqlar** (nişə + qismən nağd/kart).
@@ -112,13 +115,66 @@ Kuryer/admin borc ödəyəndə bu sifarişlər bağlanır və qutudan çıxır.
 
 ## 5–7. Kuryer üzrə bölünmə
 
-`by_courier` — hər kuryer üçün eyni 7 qutu (filter olmadan `GET /api/history` çağırılanda).
+`by_courier` — hər kuryer üçün eyni 7 pul qutu + 2 bidon qutu (filter olmadan `GET /api/history` çağırılanda).
+
+## 8–9. Bidon qutuları (YENİ)
+
+Pul qutularının **yanında** göstərin — məbləğ AZN deyil, **ədəd**.
+
+```json
+{
+  "bidons_sold": {
+    "total": 99,
+    "count": 40,
+    "unit": "bidon",
+    "label": "Satılan bidon",
+    "items": [
+      {
+        "order_id": 395,
+        "customer": "Müştəri Adı",
+        "courier_id": 3,
+        "courier_name": "Elnur",
+        "bidons": 3,
+        "completed_at": "..."
+      }
+    ]
+  },
+  "bidons_taken": {
+    "total": 85,
+    "count": 38,
+    "unit": "bidon",
+    "label": "Götürülən bidon",
+    "items": [
+      {
+        "order_id": 395,
+        "customer": "Müştəri Adı",
+        "courier_id": 3,
+        "courier_name": "Elnur",
+        "bidons": 2,
+        "order_type": "delivery",
+        "completed_at": "..."
+      }
+    ]
+  }
+}
+```
+
+| Sahə | Məna |
+|------|------|
+| `bidons_sold.total` | Verilən **dolu** (`full_bidons_given`) — yalnız çatdırılma |
+| `bidons_taken.total` | Alınan **boş** (`empty_bidons_returned`) — çatdırılma + pickup |
+| `count` | Sifariş sayı (bidonu > 0 olanlar) |
+| `items` | Modal üçün siyahı |
+
+**UI:** kartlarda `total` + «bidon» yazısı; klik → `items`.
+
+Anbardan götürülən dolu (`warehouse full_taken`) bu qutularda **yoxdur** — anbar səhifəsindədir.
 
 ## UI tövsiyəsi
 
 1. Yuxarıda period + kuryer filteri
-2. 7 kart (məbləğ + qısa mətn)
-3. Satış və Xərclər kartlarına klik → modal (detallı siyahı)
+2. 7 pul kartı + **2 bidon kartı** (yan-yana və ya eyni sırada)
+3. Satış, Xərclər, Bidon kartlarına klik → modal
 4. Aşağıda köhnə `orders`, `expenses`, `debtPayments` siyahıları (istəyə görə)
 
 ## Əlaqəli sənədlər
