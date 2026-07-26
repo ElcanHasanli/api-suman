@@ -58,7 +58,10 @@ Cədvəldə sətirə klik / “Detallar” → detal səhifəsi və ya modal.
     {
       "id": 101,
       "status": "completed",
+      "order_type": "delivery",
       "bidons_count": 2,
+      "full_bidons_given": 2,
+      "empty_bidons_returned": 2,
       "address": "Masazir...",
       "price": "6.00",
       "payment_type": "credit",
@@ -108,10 +111,14 @@ Cədvəldə sətirə klik / “Detallar” → detal səhifəsi və ya modal.
 |--------|--------|
 | Tarix | `created_at` |
 | Status | `status` |
-| Bidon | `bidons_count` |
+| Verilən (dolu) | `full_bidons_given` (tamamlanmamışda `null`; fallback: `bidons_count`) |
+| Götürülən (boş) | `empty_bidons_returned` (tamamlanmamışda `null`) |
 | Məbləğ | `price` |
 | Ödəniş | `payment_type`, `is_paid` |
 | Kuryer | `courier_name` |
+
+UI nümunəsi: `2 dolu · 2 boş` və ya ayrı sütunlar.  
+`order_type === "pickup"` → yalnız boş götürmə (`full_bidons_given` adətən `0`).
 
 Sifariş sətirinə klik → mövcud sifariş detal ekranı.
 

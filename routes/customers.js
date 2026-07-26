@@ -52,7 +52,9 @@ async function fetchCustomerDetail(customerId, companyId) {
         [customerId, companyId]
       ),
       pool.query(
-        `SELECT o.id, o.status, o.bidons_count, o.address, o.price, o.payment_type,
+        `SELECT o.id, o.status, o.order_type, o.bidons_count,
+                o.full_bidons_given, o.empty_bidons_returned,
+                o.address, o.price, o.payment_type,
                 o.amount_paid, o.is_paid, o.notes, o.created_at, o.completed_at,
                 o.assigned_at, u.name AS courier_name
          FROM orders o
@@ -78,9 +80,32 @@ async function fetchCustomerDetail(customerId, companyId) {
   return {
     customer: mapCustomerRow(customerResult.rows[0]),
     stats: statsResult.rows[0],
-    recent_orders: ordersResult.rows,
+    recent_orders: ordersResult.rows.map(mapCustomerOrderRow),
     debt_payments: debtPaymentsResult.rows,
     deposit_entries: depositEntries,
+  };
+}
+
+function mapCustomerOrderRow(row) {
+  const fullGiven =
+    row.full_bidons_given != null
+      ? Number(row.full_bidons_given)
+      : row.status === 'completed'
+        ? Number(row.bidons_count ?? 0)
+        : null;
+  const emptyTaken =
+    row.empty_bidons_returned != null
+      ? Number(row.empty_bidons_returned)
+      : row.status === 'completed'
+        ? 0
+        : null;
+
+  return {
+    ...row,
+    order_type: row.order_type ?? 'delivery',
+    bidons_count: Number(row.bidons_count ?? 0),
+    full_bidons_given: fullGiven,
+    empty_bidons_returned: emptyTaken,
   };
 }
 
