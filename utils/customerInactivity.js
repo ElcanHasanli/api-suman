@@ -51,13 +51,17 @@ export async function checkAndNotifyInactiveCustomers(companyId) {
     for (const customer of candidates) {
       checked += 1;
       try {
-        await notifyAdminsCustomerInactive(companyId, customer);
-        await pool.query(
+        // Əvvəl alert — uğurlu insert olmadan bildiriş yazılmır (dublikat / race qarşısı)
+        const locked = await pool.query(
           `INSERT INTO customer_inactivity_alerts (company_id, customer_id, last_order_date)
            VALUES ($1, $2, $3)
-           ON CONFLICT (company_id, customer_id, last_order_date) DO NOTHING`,
+           ON CONFLICT (company_id, customer_id, last_order_date) DO NOTHING
+           RETURNING id`,
           [companyId, customer.id, customer.last_order_date]
         );
+        if (!locked.rows.length) continue;
+
+        await notifyAdminsCustomerInactive(companyId, customer);
         notified += 1;
       } catch (_) {
         // one failure must not block others

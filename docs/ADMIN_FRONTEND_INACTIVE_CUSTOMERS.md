@@ -7,6 +7,8 @@ Backend avtomatik yoxlayır: müştəri **1 ay (30 gün)** sifariş verməyibsə
 
 Test rejimi yoxdur — yalnız real 30 gün (Asia/Baku).
 
+**Dublikat:** eyni müştəri üçün bir neçə `customer_inactive` görünürsə — bu frontend deyil, backend race idi (bir neçə paralel yoxlama). İndi əvvəl alert yazılır, yalnız sonra bildiriş; yeni dublikat yaranmamalıdır. Köhnə dublikatları DB-dən silmək olar (aşağıda).
+
 ---
 
 ## Trigger
@@ -64,3 +66,18 @@ pm2 restart api-suman
 ```
 
 Sonra admin panelində **Bildirişlər** səhifəsini bir dəfə açın — gözləyən passiv müştərilər (o cümlədən Xelil) yazılacaq.
+
+### Köhnə dublikatları təmizləmək (opsional, serverdə)
+
+Hər admin üçün eyni `customer_id`-dən yalnız ən son bildirişi saxlayır:
+
+```sql
+DELETE FROM notifications n
+USING notifications newer
+WHERE n.type = 'customer_inactive'
+  AND n.customer_id IS NOT NULL
+  AND newer.type = 'customer_inactive'
+  AND newer.customer_id = n.customer_id
+  AND newer.user_id = n.user_id
+  AND newer.id > n.id;
+```
