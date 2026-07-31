@@ -235,6 +235,7 @@ async function createSchema(client) {
       id SERIAL PRIMARY KEY,
       user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       order_id INT REFERENCES orders(id) ON DELETE CASCADE,
+      customer_id INT REFERENCES customers(id) ON DELETE SET NULL,
       type VARCHAR(50) NOT NULL DEFAULT 'order_assigned',
       message TEXT NOT NULL,
       read BOOLEAN DEFAULT FALSE,

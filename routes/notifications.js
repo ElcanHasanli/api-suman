@@ -10,16 +10,19 @@ router.use(authenticateToken, requireTenant);
 router.get('/', async (req, res) => {
   try {
     if (req.user.role === 'admin') {
-      checkAndNotifyInactiveCustomers(req.user.company_id).catch(() => {});
+      // Əvvəl fire-and-forget idi → yeni passiv bildirişlər eyni cavabda görünmürdü
+      await checkAndNotifyInactiveCustomers(req.user.company_id).catch(() => {});
     }
 
     const result = await pool.query(
-      `SELECT n.*, o.status AS order_status, o.address AS order_address
+      `SELECT n.*, o.status AS order_status, o.address AS order_address,
+              c.name AS customer_name, c.surname AS customer_surname
        FROM notifications n
        LEFT JOIN orders o ON n.order_id = o.id AND o.company_id = $2
+       LEFT JOIN customers c ON n.customer_id = c.id AND c.company_id = $2
        WHERE n.user_id = $1
        ORDER BY n.created_at DESC
-       LIMIT 100`,
+       LIMIT 200`,
       [req.user.id, req.user.company_id]
     );
     res.json(result.rows);
