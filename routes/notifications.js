@@ -16,11 +16,19 @@ router.get('/', async (req, res) => {
 
     const result = await pool.query(
       `SELECT n.*, o.status AS order_status, o.address AS order_address,
-              c.name AS customer_name, c.surname AS customer_surname
+              c.name AS customer_name, c.surname AS customer_surname,
+              c.active_bidons AS customer_active_bidons
        FROM notifications n
        LEFT JOIN orders o ON n.order_id = o.id AND o.company_id = $2
        LEFT JOIN customers c ON n.customer_id = c.id AND c.company_id = $2
        WHERE n.user_id = $1
+         AND NOT (
+           n.type = 'customer_inactive'
+           AND (
+             (n.customer_id IS NOT NULL AND COALESCE(c.active_bidons, 0) <= 0)
+             OR (n.customer_id IS NOT NULL AND c.id IS NULL)
+           )
+         )
        ORDER BY n.created_at DESC
        LIMIT 200`,
       [req.user.id, req.user.company_id]

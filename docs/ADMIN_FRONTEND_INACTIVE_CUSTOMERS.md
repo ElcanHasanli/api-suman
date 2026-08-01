@@ -5,7 +5,9 @@ Backend avtomatik yoxlayır: müştəri **1 ay (30 gün)** sifariş verməyibsə
 1) `notifications` siyahısına in-app bildiriş  
 2) FCM push (`customer_inactive`)
 
-**Daxil deyil:** `active_bidons = 0` olanlar (bidonu qalmayan passivlər).
+**Daxil deyil:** `active_bidons = 0` olanlar.
+
+Bildirişlər səhifəsi də 0 bidonluları **göstərmir**; `GET /api/notifications` zamanı belə köhnə qeydlər silinir.
 
 Test rejimi yoxdur — yalnız real 30 gün (Asia/Baku).
 

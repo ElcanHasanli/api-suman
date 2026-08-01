@@ -42,6 +42,34 @@ export async function findInactiveCustomers(companyId, limit = BATCH_SIZE) {
 }
 
 export async function checkAndNotifyInactiveCustomers(companyId) {
+  // 0 bidonlu müştərilərin köhnə passiv bildirişlərini sil
+  await pool.query(
+    `DELETE FROM notifications n
+     USING customers c, users u
+     WHERE n.type = 'customer_inactive'
+       AND n.customer_id = c.id
+       AND c.company_id = $1
+       AND COALESCE(c.active_bidons, 0) <= 0
+       AND n.user_id = u.id
+       AND u.company_id = $1`,
+    [companyId]
+  );
+
+  // customer_id-siz köhnə passiv bildirişlər (migrasıyadan əvvəl) — mesajdan ad uyğunlaşdırma etmirik;
+  // təmizləmək üçün: 0 bidonlu müştərinin adı mesajda keçirsə sil
+  await pool.query(
+    `DELETE FROM notifications n
+     USING customers c, users u
+     WHERE n.type = 'customer_inactive'
+       AND n.customer_id IS NULL
+       AND c.company_id = $1
+       AND COALESCE(c.active_bidons, 0) <= 0
+       AND n.user_id = u.id
+       AND u.company_id = $1
+       AND n.message ILIKE (TRIM(BOTH FROM CONCAT(c.name, ' ', COALESCE(c.surname, ''))) || '%')`,
+    [companyId]
+  );
+
   let checked = 0;
   let notified = 0;
 
