@@ -15,13 +15,15 @@ export async function findInactiveCustomers(companyId, limit = BATCH_SIZE) {
          c.id,
          c.name,
          c.surname,
+         c.active_bidons,
          (COALESCE(MAX(o.created_at), c.created_at) AT TIME ZONE 'Asia/Baku')::date AS last_order_date
        FROM customers c
        LEFT JOIN orders o
          ON o.customer_id = c.id
         AND o.company_id = c.company_id
        WHERE c.company_id = $1
-       GROUP BY c.id, c.name, c.surname, c.created_at
+         AND c.active_bidons > 0
+       GROUP BY c.id, c.name, c.surname, c.created_at, c.active_bidons
      )
      SELECT clo.*
      FROM customer_last_order clo
