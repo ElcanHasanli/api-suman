@@ -1,202 +1,213 @@
-# Admin — Tarixçə dashboard (7 pul qutu + 2 bidon)
+# Admin — Tarixçə: Günlük və Aylıq hesabat
 
-Yeni tarixçə səhifəsi `GET /api/history` və ya yalnız qutular üçün `GET /api/history/dashboard` ilə işləyir.
+Tarixçə səhifəsində **2 tab**:
 
-## Filterlər
+1. **Günlük hesabat** — mövcud bütün qutular, yalnız **1 gün**
+2. **Aylıq hesabat** — sadələşdirilmiş qutular, **tarix aralığı**
+
+---
+
+## 1. Günlük hesabat
+
+| Method | URL |
+|--------|-----|
+| `GET` | `/api/history` |
+| `GET` | `/api/history/dashboard` |
+
+### Filterlər
 
 | Parametr | Məna |
 |----------|------|
-| `period` | `today` (default), `yesterday`, `week`, `month`, `custom` |
-| `startDate`, `endDate` | `period=custom` üçün (YYYY-MM-DD) |
-| `courier_id` | Kuryer filteri; göndərilməsə — **hamısı birlikdə** |
+| `period` | `today` (default) \| `yesterday` \| `custom` |
+| `date` | Tək gün seçimi: `YYYY-MM-DD` (məs. keçən ayın 20-si) |
+| `startDate` + `endDate` | `custom` üçün — **eyni gün** olmalıdır |
+| `courier_id` | Kuryer filteri (opsional) |
+| `expense_q` | Xərc **təsvirinə** görə axtarış (ILIKE) |
 
 ```http
 GET /api/history/dashboard?period=today
-GET /api/history/dashboard?period=custom&startDate=2026-07-08&endDate=2026-07-09
-GET /api/history/dashboard?period=today&courier_id=3
+GET /api/history/dashboard?period=yesterday
+GET /api/history/dashboard?date=2026-06-20
+GET /api/history/dashboard?period=custom&startDate=2026-06-20&endDate=2026-06-20
+GET /api/history/dashboard?period=today&expense_q=yanacaq
 ```
 
-Cavabda `couriers` — filter dropdown üçün kuryer siyahısı.
+**Qadağan:** `period=week|month` → `400` (`DAILY_PERIOD_INVALID`). Aralıq üçün aylıq tab.
 
-## Qutular (`dashboard`)
+### UI — günlük filter
 
-| Qutu | API sahəsi | Məna |
-|------|------------|------|
-| 1. Satış | `dashboard.sales` | Su satışı (2.50 / 3.00 və s.) + pompa, dispenser, cərimə |
-| 2. Borc verildi | `dashboard.debt_given` | Müştərilərin ödədiyi köhnə borc |
-| 3. Nişə | `dashboard.credit` | Nişə ilə tamamlanmış, ödənilməmiş sifarişlər |
-| 4. Ödənilib | `dashboard.prepaid` | Əvvəlcədən ödənilmiş sifarişlər (kuryer pul almır) |
-| 5. Kuryerdə qalıq | `dashboard.courier_balance` | (Satış + Borc verildi) − (Nişə + Ödənilib + qismən nağd/kart qalığı) |
-| 6. Xərclər | `dashboard.expenses` | Admin və kuryer xərcləri |
-| 7. Qalıq | `dashboard.net_balance` | Kuryerdə qalıq − Xərclər |
-| 8. Satılan bidon | `dashboard.bidons_sold` | Verilən **dolu** bidon sayı |
-| 9. Götürülən bidon | `dashboard.bidons_taken` | Müştəridən alınan **boş** bidon sayı |
-| 10. Depozit | `dashboard.deposits` | Periodda daxil/çıxan depozit + ümumi cəm |
+- Bu gün / Dünən
+- Tarix seçici (**1 gün**)
+- Kuryer (opsional)
 
-### Düstur
+### Günlük qutular (hamısı qalır)
 
-```
-kuryerdə_qalıq = satış + borc_verildi − nişə − ödənilib − qismən_ödənilməmiş_nağd/kart
-qalıq = kuryerdə_qalıq − xərclər
-```
+| Qutu | API | Klik → |
+|------|-----|--------|
+| Satış | `dashboard.sales` | `sales.orders` |
+| Borc verildi | `dashboard.debt_given` | `customers` |
+| Nişə | `dashboard.credit` | **`credit.customers`** — hansı müştəridə nişə/ödənilməmiş |
+| Ödənilib | `dashboard.prepaid` | … |
+| Kuryerdə qalıq | `dashboard.courier_balance` | … |
+| Xərclər | `dashboard.expenses` | `expenses.items` + **təsvir filteri** (`expense_q`) |
+| Qalıq | `dashboard.net_balance` | … |
+| Satılan bidon | `dashboard.bidons_sold` | `items` |
+| Götürülən bidon | `dashboard.bidons_taken` | `items` |
+| Depozit | `dashboard.deposits` | `entries` |
 
-`dashboard.courier_balance.formula` — hesabın detallı bölgüsü.
-
-## 1. Satış qutusu
+### Nişə modalı (günlük + aylıq)
 
 ```json
 {
-  "sales": {
-    "total": 298.5,
-    "water_total": 286.5,
-    "extras_total": 12,
-    "water": [
-      { "unit_price": 2.5, "bidons": 21, "amount": 52.5 },
-      { "unit_price": 3, "bidons": 78, "amount": 234 }
-    ],
-    "extras": [
-      { "type": "pump", "label": "Pompa", "count": 1, "amount": 12 }
-    ],
-    "by_courier": [...],
-    "orders": [...]
-  }
-}
-```
-
-**Modal:** qutuya klik → `sales.orders` və ya `sales.by_courier` göstərin.
-
-## 2. Borc verildi
-
-Yalnız **kuryerin** müştəridən aldığı köhnə borc ödənişi (`debt_paid` tamamlamada).
-
-**Daxil deyil:**
-- Admin panelindən borc sıfırlama / `pay-debt`
-- Admin `mark-paid`
-
-Admin ödənişləri aşağıdakı `debtPayments` siyahısında görünür (`recorded_by_role: "admin"`).
-
-```json
-{
-  "debt_given": {
-    "total": 23,
-    "count": 2,
+  "credit": {
+    "total": 35.5,
+    "count": 3,
+    "label": "Nişə / ödənilməmiş",
     "customers": [
       {
-        "customer": "Adrik",
-        "amount": 9,
-        "order_id": 15,
-        "recorded_by_name": "Elnur",
-        "recorded_by_role": "courier"
+        "order_id": 101,
+        "customer_id": 12,
+        "customer": "Azer Huseynov",
+        "amount": 12.5,
+        "price": 22.5,
+        "amount_paid": 10,
+        "payment_type": "cash",
+        "kind": "partial",
+        "courier_name": "Elnur",
+        "completed_at": "..."
+      },
+      {
+        "order_id": 102,
+        "customer": "Xelil",
+        "amount": 6,
+        "payment_type": "credit",
+        "kind": "credit"
       }
     ]
   }
 }
 ```
 
-`debtPayments` (aşağı siyahı) — bütün ödənişlər (kuryer + admin).
+| `kind` | Məna |
+|--------|------|
+| `credit` | Tam nişə |
+| `partial` | Qismən ödəniş — qalıq ödənilməyib |
 
-## 3. Nişə / ödənilməmiş
+### Xərc modalı + filter
 
-`dashboard.credit` — **bütün ödənilməmiş qalıqlar** (nişə + qismən nağd/kart).
+Xərclər qutusuna klik → siyahı + axtarış inputu (təsvir).
 
-`summary.unpaidCreditAmount` ilə **eyni məbləğ** olmalıdır.
+```http
+GET /api/history/dashboard?period=today&expense_q=yanacaq
+```
 
-| Sahə | Məna |
-|------|------|
-| `kind: "credit"` | Tam nişə (`payment_type: credit`) |
-| `kind: "partial"` | Qismən ödəniş (məs. 22.50-dən 10 ödənib → 12.50) |
+`dashboard.expenses.items` və `expenses` massivi filterlənmiş gəlir. `description` sahəsinə görə axtarış.
 
-Nümunə: qiymət 22.50, `amount_paid: 10` → modalda **12.50** (`kind: partial`).
+---
 
-Kuryer/admin borc ödəyəndə bu sifarişlər bağlanır və qutudan çıxır.
+## 2. Aylıq hesabat (YENİ)
 
-## 4. Ödənilib
+| Method | URL |
+|--------|-----|
+| `GET` | `/api/history/monthly` |
+| `GET` | `/api/history/monthly/dashboard` |
 
-`is_prepaid: true` sifarişlər — müştəri təyinat zamanı ödəyib.
+### Filterlər — tarix aralığı
 
-## 5–7. Kuryer üzrə bölünmə
+| Parametr | Məna |
+|----------|------|
+| `startDate`, `endDate` | Mütləq (`period=custom`, default) |
+| `period` | `custom` \| `week` \| `days2` \| `month` (UI shortcut) |
+| `courier_id` | opsional |
+| `expense_q` | Xərc təsviri axtarışı |
 
-`by_courier` — hər kuryer üçün eyni 7 pul qutu + 2 bidon qutu (filter olmadan `GET /api/history` çağırılanda).
+```http
+GET /api/history/monthly?startDate=2026-07-01&endDate=2026-07-31
+GET /api/history/monthly?period=week
+GET /api/history/monthly?period=days2
+GET /api/history/monthly?period=month
+GET /api/history/monthly?startDate=2026-07-01&endDate=2026-07-07&expense_q=pompa
+```
 
-## 8–9. Bidon qutuları (YENİ)
+**UI tövsiyəsi:** date-range picker. Shortcut düymələr:
 
-Pul qutularının **yanında** göstərin — məbləğ AZN deyil, **ədəd**.
+| Düymə | Backend |
+|-------|---------|
+| 2 gün | `period=days2` və ya `startDate=dünən&endDate=bugün` |
+| Həftə | `period=week` |
+| Bu ay | `period=month` |
+| Özəl aralıq | `startDate` + `endDate` |
+
+### Aylıq qutular
+
+| Qutu | API | Məna |
+|------|-----|------|
+| Satış | `dashboard.sales` | Su + extras |
+| Nişə | `dashboard.credit` | Ödənilməmiş (nişə/qismən) — klik → müştərilər |
+| Xərclər | `dashboard.expenses` | + `expense_q` filter |
+| Satılan bidon | `dashboard.bidons_sold` | Dolu verilən |
+| Götürülən bidon | `dashboard.bidons_taken` | Boş alınan |
+| Xalis gəlir | `dashboard.net_income` | **satış − xərclər** |
 
 ```json
 {
-  "bidons_sold": {
-    "total": 99,
-    "count": 40,
-    "unit": "bidon",
-    "label": "Satılan bidon",
-    "items": [
-      {
-        "order_id": 395,
-        "customer": "Müştəri Adı",
-        "courier_id": 3,
-        "courier_name": "Elnur",
-        "bidons": 3,
-        "completed_at": "..."
-      }
-    ]
-  },
-  "bidons_taken": {
-    "total": 85,
-    "count": 38,
-    "unit": "bidon",
-    "label": "Götürülən bidon",
-    "items": [
-      {
-        "order_id": 395,
-        "customer": "Müştəri Adı",
-        "courier_id": 3,
-        "courier_name": "Elnur",
-        "bidons": 2,
-        "order_type": "delivery",
-        "completed_at": "..."
-      }
-    ]
+  "report": "monthly",
+  "period": "custom",
+  "startDate": "2026-07-01",
+  "endDate": "2026-07-31",
+  "expense_q": null,
+  "dashboard": {
+    "sales": { "total": 5200, "...": "..." },
+    "credit": { "total": 180, "customers": ["..."] },
+    "expenses": { "total": 450, "items": ["..."] },
+    "bidons_sold": { "total": 1200 },
+    "bidons_taken": { "total": 1100 },
+    "net_income": {
+      "total": 4750,
+      "sales": 5200,
+      "expenses": 450,
+      "formula": "xalis_gəlir = satış − xərclər",
+      "label": "Xalis gəlir"
+    }
   }
 }
 ```
 
-| Sahə | Məna |
+Aylıqda **yoxdur:** borc verildi, ödənilib, kuryerdə qalıq, depozit, `by_courier` (lazımdırsa sonra əlavə olunar).
+
+---
+
+## UI skelet
+
+```
+[ Günlük hesabat ]  [ Aylıq hesabat ]
+
+Günlük:
+  [ Bu gün ] [ Dünən ] [ 📅 1 gün ]  [ Kuryer ▾ ]
+  → 10 qutu (mövcud)
+
+Aylıq:
+  [ 2 gün ] [ Həftə ] [ Bu ay ]  [ 📅 — 📅 aralıq ]  [ Kuryer ▾ ]
+  → 6 qutu: Satış | Nişə | Xərclər | Satılan | Götürülən | Xalis gəlir
+```
+
+Xərclər modalında hər iki tabda təsvir axtarışı.  
+Nişə modalında hər iki tabda `credit.customers`.
+
+---
+
+## Xətalar
+
+| code | Məna |
 |------|------|
-| `bidons_sold.total` | Verilən **dolu** (`full_bidons_given`) — yalnız çatdırılma |
-| `bidons_taken.total` | Alınan **boş** (`empty_bidons_returned`) — çatdırılma + pickup |
-| `count` | Sifariş sayı (bidonu > 0 olanlar) |
-| `items` | Modal üçün siyahı |
+| `DAILY_PERIOD_INVALID` | Günlükdə week/month |
+| `DAILY_SINGLE_DAY_ONLY` | startDate ≠ endDate |
+| `RANGE_DATES_REQUIRED` | Aylıqda tarix yoxdur |
 
-**UI:** kartlarda `total` + «bidon» yazısı; klik → `items`.
+## Deploy
 
-Anbardan götürülən dolu (`warehouse full_taken`) bu qutularda **yoxdur** — anbar səhifəsindədir.
-
-## 10. Depozit qutusu
-
-Period üzrə daxil olan / çıxan depozit. Tam sənəd: `docs/ADMIN_FRONTEND_CUSTOMER_DEPOSIT.md`.
-
-```json
-{
-  "deposits": {
-    "entered": 120,
-    "removed": 40,
-    "net": 80,
-    "current_total": 1540.5,
-    "entries": [...]
-  }
-}
+```bash
+pm2 restart api-suman
 ```
 
-## UI tövsiyəsi
-
-1. Yuxarıda period + kuryer filteri
-2. 7 pul kartı + **2 bidon** + **1 depozit** kartı
-3. Satış, Xərclər, Bidon, Depozit kartlarına klik → modal
-4. Aşağıda köhnə `orders`, `expenses`, `debtPayments`, `depositEntries` siyahıları (istəyə görə)
-
-## Əlaqəli sənədlər
-
-- `docs/ADMIN_FRONTEND_CUSTOMER_DEPOSIT.md` — depozit + müştəri qeydi
-- `docs/ADMIN_FRONTEND_ORDER_EXTRAS.md` — pompa, dispenser, cərimə
-- `docs/ADMIN_FRONTEND_DEBTORS.md` — borclu müştərilər səhifəsi
-- `docs/ADMIN_FRONTEND_WAREHOUSE.md` — anbar (boş/dolu giriş-çıxış)
+Migration lazım deyil.

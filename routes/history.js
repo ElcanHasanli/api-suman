@@ -2,13 +2,18 @@ import express from 'express';
 import pool from '../config/database.js';
 import { authenticateToken, authorizeRole, requireTenant } from '../middleware/auth.js';
 import { buildCompletedOrdersFilter, COMPLETED_ORDER_SELECT } from '../utils/historyQuery.js';
-import { buildDateFilter } from '../utils/periodFilter.js';
+import {
+  buildDateFilter,
+  resolveDailyPeriodQuery,
+  resolveRangePeriodQuery,
+} from '../utils/periodFilter.js';
 import { buildExcelBuffer, sendExcel } from '../utils/excel.js';
 import { formatExpenseRow } from '../utils/expenseFormat.js';
 import { unpaidOrderAmount } from '../utils/orderCompletion.js';
 import { normalizeDateOnly, toBakuDateTimeString } from '../utils/bakuDate.js';
 import {
   buildHistoryDashboard,
+  buildMonthlyReportDashboard,
   buildPerCourierDashboard,
 } from '../utils/historyDashboard.js';
 import { fetchOrderExtras } from '../utils/orderExtras.js';
@@ -132,7 +137,14 @@ async function fetchHistoryOrders(period, startDate, endDate, companyId, courier
   }));
 }
 
-async function fetchExpenses(period, startDate, endDate, companyId, courierId = null) {
+async function fetchExpenses(
+  period,
+  startDate,
+  endDate,
+  companyId,
+  courierId = null,
+  expenseQ = null
+) {
   let query = `
     SELECT e.*, u.name AS courier_name
     FROM expenses e
@@ -143,6 +155,12 @@ async function fetchExpenses(period, startDate, endDate, companyId, courierId = 
   if (courierId) {
     params.push(courierId);
     query += ` AND e.courier_id = $${params.length}`;
+  }
+
+  const term = (expenseQ || '').trim();
+  if (term) {
+    params.push(`%${term}%`);
+    query += ` AND e.description ILIKE $${params.length}`;
   }
 
   const df = buildDateFilter('e.created_at', period, startDate, endDate, params);
@@ -200,98 +218,187 @@ const historyColumns = [
   { header: 'Tamamlanma', key: 'completed_at', width: 20 },
 ];
 
+function sendHistoryError(res, err) {
+  res.status(err.status || 500).json({
+    error: err.message,
+    code: err.code ?? undefined,
+  });
+}
+
+async function loadDailyPayload(req) {
+  const { period, startDate, endDate } = resolveDailyPeriodQuery(req.query);
+  const courierId = req.query.courier_id || null;
+  const expenseQ = req.query.expense_q || req.query.q || null;
+  const companyId = req.user.company_id;
+
+  const [orders, expenses, debtPayments, depositEntries, depositTotals, couriers] =
+    await Promise.all([
+      fetchHistoryOrders(period, startDate, endDate, companyId, courierId),
+      fetchExpenses(period, startDate, endDate, companyId, courierId, expenseQ),
+      fetchDebtPayments(period, startDate, endDate, companyId),
+      fetchDepositEntries(period, startDate, endDate, companyId),
+      fetchCompanyDepositTotal(companyId),
+      fetchCouriers(companyId),
+    ]);
+
+  const dashboard = buildHistoryDashboard({
+    orders,
+    debtPayments,
+    expenses,
+    depositEntries,
+    depositCurrentTotal: depositTotals.current_total,
+    courierId,
+  });
+
+  return {
+    report: 'daily',
+    period,
+    startDate: startDate ?? null,
+    endDate: endDate ?? null,
+    courier_id: courierId ? Number(courierId) : null,
+    expense_q: expenseQ ? String(expenseQ).trim() || null : null,
+    couriers,
+    dashboard,
+    by_courier: courierId
+      ? null
+      : buildPerCourierDashboard({ orders, debtPayments, expenses }),
+    orders,
+    expenses,
+    debtPayments,
+    depositEntries,
+    deposit_totals: depositTotals,
+  };
+}
+
+/** Günlük hesabat — yalnız 1 gün (today / yesterday / date) */
 router.get('/dashboard', async (req, res) => {
   try {
-    const { period = 'today', startDate, endDate, courier_id: courierId } = req.query;
-    const companyId = req.user.company_id;
-
-    const [orders, expenses, debtPayments, depositEntries, depositTotals, couriers] =
-      await Promise.all([
-        fetchHistoryOrders(period, startDate, endDate, companyId, courierId || null),
-        fetchExpenses(period, startDate, endDate, companyId, courierId || null),
-        fetchDebtPayments(period, startDate, endDate, companyId),
-        fetchDepositEntries(period, startDate, endDate, companyId),
-        fetchCompanyDepositTotal(companyId),
-        fetchCouriers(companyId),
-      ]);
-
-    const dashboard = buildHistoryDashboard({
-      orders,
-      debtPayments,
-      expenses,
-      depositEntries,
-      depositCurrentTotal: depositTotals.current_total,
-      courierId: courierId || null,
-    });
-
+    const payload = await loadDailyPayload(req);
     res.json({
-      period,
-      startDate: startDate ?? null,
-      endDate: endDate ?? null,
-      courier_id: courierId ? Number(courierId) : null,
-      couriers,
-      dashboard,
-      by_courier: courierId ? null : buildPerCourierDashboard({ orders, debtPayments, expenses }),
+      report: payload.report,
+      period: payload.period,
+      startDate: payload.startDate,
+      endDate: payload.endDate,
+      courier_id: payload.courier_id,
+      expense_q: payload.expense_q,
+      couriers: payload.couriers,
+      dashboard: payload.dashboard,
+      by_courier: payload.by_courier,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendHistoryError(res, err);
   }
 });
 
 router.get('/', async (req, res) => {
   try {
-    const { period = 'today', startDate, endDate, courier_id: courierId } = req.query;
+    const payload = await loadDailyPayload(req);
+    const summary = buildFullSummary(
+      summarizeOrders(payload.orders),
+      payload.expenses,
+      payload.debtPayments
+    );
+
+    res.json({
+      report: payload.report,
+      period: payload.period,
+      startDate: payload.startDate,
+      endDate: payload.endDate,
+      courier_id: payload.courier_id,
+      expense_q: payload.expense_q,
+      couriers: payload.couriers,
+      summary,
+      dashboard: payload.dashboard,
+      by_courier: payload.by_courier,
+      orders: payload.orders.map(mapHistoryOrder),
+      expenses: payload.expenses,
+      debtPayments: payload.debtPayments,
+      depositEntries: payload.depositEntries,
+      deposit_totals: payload.deposit_totals,
+    });
+  } catch (err) {
+    sendHistoryError(res, err);
+  }
+});
+
+/**
+ * Aylıq / aralıq hesabat.
+ * UI: tarix aralığı (və ya period=week|days2|month).
+ * Qutular: satış, nişə, xərclər, satılan/götürülən bidon, xalis gəlir.
+ */
+router.get('/monthly', async (req, res) => {
+  try {
+    const { period, startDate, endDate } = resolveRangePeriodQuery(req.query);
+    const courierId = req.query.courier_id || null;
+    const expenseQ = req.query.expense_q || req.query.q || null;
     const companyId = req.user.company_id;
 
-    const [orders, expenses, debtPayments, depositEntries, depositTotals, couriers] =
-      await Promise.all([
-        fetchHistoryOrders(period, startDate, endDate, companyId, courierId || null),
-        fetchExpenses(period, startDate, endDate, companyId, courierId || null),
-        fetchDebtPayments(period, startDate, endDate, companyId),
-        fetchDepositEntries(period, startDate, endDate, companyId),
-        fetchCompanyDepositTotal(companyId),
-        fetchCouriers(companyId),
-      ]);
+    const [orders, expenses, couriers] = await Promise.all([
+      fetchHistoryOrders(period, startDate, endDate, companyId, courierId),
+      fetchExpenses(period, startDate, endDate, companyId, courierId, expenseQ),
+      fetchCouriers(companyId),
+    ]);
 
-    const summary = buildFullSummary(summarizeOrders(orders), expenses, debtPayments);
-    const dashboard = buildHistoryDashboard({
+    const dashboard = buildMonthlyReportDashboard({
       orders,
-      debtPayments,
       expenses,
-      depositEntries,
-      depositCurrentTotal: depositTotals.current_total,
-      courierId: courierId || null,
+      courierId,
     });
 
     res.json({
+      report: 'monthly',
       period,
       startDate: startDate ?? null,
       endDate: endDate ?? null,
       courier_id: courierId ? Number(courierId) : null,
+      expense_q: expenseQ ? String(expenseQ).trim() || null : null,
       couriers,
-      summary,
       dashboard,
-      by_courier: courierId ? null : buildPerCourierDashboard({ orders, debtPayments, expenses }),
       orders: orders.map(mapHistoryOrder),
       expenses,
-      debtPayments,
-      depositEntries,
-      deposit_totals: depositTotals,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendHistoryError(res, err);
+  }
+});
+
+router.get('/monthly/dashboard', async (req, res) => {
+  try {
+    const { period, startDate, endDate } = resolveRangePeriodQuery(req.query);
+    const courierId = req.query.courier_id || null;
+    const expenseQ = req.query.expense_q || req.query.q || null;
+    const companyId = req.user.company_id;
+
+    const [orders, expenses, couriers] = await Promise.all([
+      fetchHistoryOrders(period, startDate, endDate, companyId, courierId),
+      fetchExpenses(period, startDate, endDate, companyId, courierId, expenseQ),
+      fetchCouriers(companyId),
+    ]);
+
+    res.json({
+      report: 'monthly',
+      period,
+      startDate: startDate ?? null,
+      endDate: endDate ?? null,
+      courier_id: courierId ? Number(courierId) : null,
+      expense_q: expenseQ ? String(expenseQ).trim() || null : null,
+      couriers,
+      dashboard: buildMonthlyReportDashboard({ orders, expenses, courierId }),
+    });
+  } catch (err) {
+    sendHistoryError(res, err);
   }
 });
 
 router.get('/export', async (req, res) => {
   try {
-    const { period = 'today', startDate, endDate, courier_id: courierId } = req.query;
+    const { period, startDate, endDate } = resolveDailyPeriodQuery(req.query);
     const orders = await fetchHistoryOrders(
       period,
       startDate,
       endDate,
       req.user.company_id,
-      courierId || null
+      req.query.courier_id || null
     );
 
     const rows = orders.map((o) => ({
@@ -308,7 +415,7 @@ router.get('/export', async (req, res) => {
     const buffer = await buildExcelBuffer('Tarixcə', historyColumns, rows);
     sendExcel(res, buffer, `tarixce-${period}.xlsx`);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    sendHistoryError(res, err);
   }
 });
 

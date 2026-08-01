@@ -129,8 +129,11 @@ Kuryer tamamladıqda admin paneldə də `completed` olur (eyni status).
 - `GET /api/orders/courier/:courierId/export?period=` — Excel tarixçə
 
 ### Tarixçə (admin)
-- `GET /api/history?period=today|week|month|custom&startDate=&endDate=` — sifarişlər + gəlir xülasəsi
-- `GET /api/history/export?period=...` — Excel
+- `GET /api/history` — **günlük** hesabat (`today` \| `yesterday` \| `date=YYYY-MM-DD`); `expense_q` xərc təsviri
+- `GET /api/history/dashboard` — yalnız günlük qutular
+- `GET /api/history/monthly?startDate=&endDate=` — **aylıq/aralıq** (satış, nişə, xərc, bidon, xalis gəlir)
+- `GET /api/history/export?period=...` — Excel (günlük)
+- Frontend: `docs/ADMIN_FRONTEND_HISTORY_DASHBOARD.md`
 
 ### Bildirişlər / Push (Android + iOS)
 - `POST /api/devices/register` — `{ token, platform: "android"|"ios", app: "admin"|"courier" }` (login sonrası)

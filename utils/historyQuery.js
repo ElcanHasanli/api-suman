@@ -19,6 +19,8 @@ export function buildCompletedOrdersFilter(period, startDate, endDate, companyId
     clause += ` AND ${col} = ${BAKU_TODAY}`;
   } else if (period === 'yesterday') {
     clause += ` AND ${col} = (${BAKU_TODAY} - INTERVAL '1 day')::date`;
+  } else if (period === 'days2') {
+    clause += ` AND ${col} >= (${BAKU_TODAY} - INTERVAL '1 day')::date`;
   } else if (period === 'week') {
     clause += ` AND ${col} >= (${BAKU_TODAY} - INTERVAL '6 days')::date`;
   } else if (period === 'month') {

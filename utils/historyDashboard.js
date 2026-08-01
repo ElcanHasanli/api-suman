@@ -240,6 +240,7 @@ export function buildCreditBox(orders, courierId = null) {
   return {
     total: roundMoney(customers.reduce((s, row) => s + row.amount, 0)),
     count: customers.length,
+    label: 'Nişə / ödənilməmiş',
     customers,
   };
 }
@@ -448,6 +449,34 @@ export function buildHistoryDashboard({
     bidons_sold: bidonsSold,
     bidons_taken: bidonsTaken,
     deposits,
+  };
+}
+
+/**
+ * Aylıq / aralıq hesabat — sadələşdirilmiş qutular.
+ * xalis = satış − xərclər
+ */
+export function buildMonthlyReportDashboard({ orders, expenses, courierId = null }) {
+  const sales = buildSalesBox(orders, courierId);
+  const credit = buildCreditBox(orders, courierId);
+  const expensesBox = buildExpensesBox(expenses, courierId);
+  const bidonsSold = buildBidonsSoldBox(orders, courierId);
+  const bidonsTaken = buildBidonsTakenBox(orders, courierId);
+  const netIncome = {
+    total: roundMoney(sales.total - expensesBox.total),
+    sales: sales.total,
+    expenses: expensesBox.total,
+    formula: 'xalis_gəlir = satış − xərclər',
+    label: 'Xalis gəlir',
+  };
+
+  return {
+    sales,
+    credit,
+    expenses: expensesBox,
+    bidons_sold: bidonsSold,
+    bidons_taken: bidonsTaken,
+    net_income: netIncome,
   };
 }
 
