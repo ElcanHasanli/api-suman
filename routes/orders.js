@@ -41,6 +41,7 @@ import {
 import { normalizeOrderType, isPickupOrder } from '../utils/orderTypes.js';
 import { applyCustomerDebtUpdate } from '../utils/customerDebt.js';
 import { whatsAppUrl } from '../utils/phone.js';
+import { formatCustomerDisplay } from '../utils/customerName.js';
 import { clearCustomerInactiveState } from '../utils/customerInactivity.js';
 
 const router = express.Router();
