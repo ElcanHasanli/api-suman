@@ -41,7 +41,7 @@ import {
 import { normalizeOrderType, isPickupOrder } from '../utils/orderTypes.js';
 import { applyCustomerDebtUpdate } from '../utils/customerDebt.js';
 import { whatsAppUrl } from '../utils/phone.js';
-import { formatCustomerDisplay } from '../utils/customerName.js';
+import { clearCustomerInactiveState } from '../utils/customerInactivity.js';
 
 const router = express.Router();
 
@@ -545,6 +545,8 @@ router.post('/', authorizeRole(['admin']), async (req, res) => {
     }
 
     await client.query('COMMIT');
+
+    await clearCustomerInactiveState(req.user.company_id, customer_id).catch(() => {});
 
     if (courier_id) {
       await notifyCourierOnAssign({

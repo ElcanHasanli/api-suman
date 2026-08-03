@@ -1,10 +1,10 @@
 import pool from '../config/database.js';
 import { notifyAdminsCustomerInactive } from '../lib/notifyAdmins.js';
 
-/** 1 ay = 30 gün (Asia/Baku). Test rejimi yoxdur. */
-export const INACTIVITY_DAYS = 30;
+/** Passiv həddi: 20 gün (Asia/Baku). */
+export const INACTIVITY_DAYS = 20;
 
-/** Bir yoxlamada max — əvvəl LIMIT 50 idi, növbədə geridə qalanlar (məs. Xelil #303) heç çıxmırdı */
+/** Bir yoxlamada max */
 const BATCH_SIZE = 100;
 const MAX_PER_RUN = 1000;
 
@@ -41,22 +41,52 @@ export async function findInactiveCustomers(companyId, limit = BATCH_SIZE) {
   return result.rows;
 }
 
-export async function checkAndNotifyInactiveCustomers(companyId) {
-  // 0 bidonlu müştərilərin köhnə passiv bildirişlərini sil
+/**
+ * Sifariş yarananda: passiv bildiriş + alert silinsin.
+ * 20 gün yenidən sifariş olmasa yenidən düşə bilər.
+ */
+export async function clearCustomerInactiveState(companyId, customerId) {
+  if (!companyId || !customerId) return;
+
+  await pool.query(
+    `DELETE FROM notifications n
+     USING users u
+     WHERE n.type = 'customer_inactive'
+       AND n.customer_id = $1
+       AND n.user_id = u.id
+       AND u.company_id = $2`,
+    [customerId, companyId]
+  );
+
+  await pool.query(
+    `DELETE FROM customer_inactivity_alerts
+     WHERE company_id = $1 AND customer_id = $2`,
+    [companyId, customerId]
+  );
+}
+
+/** Artıq passiv olmayanların (0 bidon / 20 gündən az) köhnə bildirişlərini sil */
+export async function pruneStaleInactiveNotifications(companyId) {
   await pool.query(
     `DELETE FROM notifications n
      USING customers c, users u
      WHERE n.type = 'customer_inactive'
        AND n.customer_id = c.id
        AND c.company_id = $1
-       AND COALESCE(c.active_bidons, 0) <= 0
        AND n.user_id = u.id
-       AND u.company_id = $1`,
-    [companyId]
+       AND u.company_id = $1
+       AND (
+         COALESCE(c.active_bidons, 0) <= 0
+         OR (
+           SELECT (COALESCE(MAX(o.created_at), c.created_at) AT TIME ZONE 'Asia/Baku')::date
+           FROM orders o
+           WHERE o.customer_id = c.id AND o.company_id = c.company_id
+         ) > ((NOW() AT TIME ZONE 'Asia/Baku')::date - $2::int)
+       )`,
+    [companyId, INACTIVITY_DAYS]
   );
 
-  // customer_id-siz köhnə passiv bildirişlər (migrasıyadan əvvəl) — mesajdan ad uyğunlaşdırma etmirik;
-  // təmizləmək üçün: 0 bidonlu müştərinin adı mesajda keçirsə sil
+  // customer_id-siz köhnə qeydlər — yalnız 0 bidonlu ad uyğunluğu
   await pool.query(
     `DELETE FROM notifications n
      USING customers c, users u
@@ -69,6 +99,10 @@ export async function checkAndNotifyInactiveCustomers(companyId) {
        AND n.message ILIKE (TRIM(BOTH FROM CONCAT(c.name, ' ', COALESCE(c.surname, ''))) || '%')`,
     [companyId]
   );
+}
+
+export async function checkAndNotifyInactiveCustomers(companyId) {
+  await pruneStaleInactiveNotifications(companyId);
 
   let checked = 0;
   let notified = 0;
@@ -81,7 +115,6 @@ export async function checkAndNotifyInactiveCustomers(companyId) {
     for (const customer of candidates) {
       checked += 1;
       try {
-        // Əvvəl alert — uğurlu insert olmadan bildiriş yazılmır (dublikat / race qarşısı)
         const locked = await pool.query(
           `INSERT INTO customer_inactivity_alerts (company_id, customer_id, last_order_date)
            VALUES ($1, $2, $3)

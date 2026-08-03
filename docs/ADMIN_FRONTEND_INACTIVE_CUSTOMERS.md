@@ -1,26 +1,28 @@
-# Admin — 1 ay passiv müştəri bildirişi
+# Admin — Passiv müştəri bildirişi (20 gün + qalıq bidon)
 
-Backend avtomatik yoxlayır: müştəri **1 ay (30 gün)** sifariş verməyibsə **və** onda **qalıq bidon** var (`active_bidons > 0`), adminlərə:
+Backend avtomatik yoxlayır. Bildiriş **yalnız** bu şərtlərlə:
 
-1) `notifications` siyahısına in-app bildiriş  
-2) FCM push (`customer_inactive`)
+1. **20+ gündür** sifariş yaradılmayıb (`orders.created_at`, yoxdursa `customers.created_at`)
+2. **`active_bidons > 0`** — qalıq bidon var
 
-**Daxil deyil:** `active_bidons = 0` olanlar.
+Adminlərə: in-app `notifications` + FCM push (`customer_inactive`).
 
-Bildirişlər səhifəsi də 0 bidonluları **göstərmir**; `GET /api/notifications` zamanı belə köhnə qeydlər silinir.
+### Siyahıdan çıxır
 
-Test rejimi yoxdur — yalnız real 30 gün (Asia/Baku).
+| Hadisə | Nəticə |
+|--------|--------|
+| Yeni sifariş yaradılır | Həmin müştərinin passiv bildirişi + alert silinir |
+| Bidon 0 olur | Siyahıda görünmür / silinir |
+| Son sifarişdən 20 gün keçməyib | Siyahıda görünmür / silinir |
 
-**Dublikat:** eyni müştəri üçün bir neçə `customer_inactive` görünürsə — backend race idi. İndi əvvəl alert yazılır, yalnız sonra bildiriş.
+20 gün yenidən sifariş olmasa — yenidən düşə bilər.
 
 ---
 
 ## Trigger
 
-- Admin login sonrası (fon)
-- `GET /api/notifications` açılanda — əvvəl yoxlama bitirilir, sonra siyahı qayıdır
-
-Bir yoxlamada max **1000** passiv müştəri (batch 100).
+- Admin login (fon)
+- `GET /api/notifications` — əvvəl yoxlama + köhnə passivləri təmizləmə, sonra siyahı
 
 ---
 
@@ -28,12 +30,10 @@ Bir yoxlamada max **1000** passiv müştəri (batch 100).
 
 ```json
 {
-  "id": 12,
   "type": "customer_inactive",
-  "message": "Xelil 1 aydır sifariş verməyib — qalıq 2 bidon (son: 2026-06-28)",
+  "message": "Xelil 20 gündür sifariş verməyib — qalıq 2 bidon (son: 2026-06-28)",
   "customer_id": 303,
-  "customer_name": "Xelil",
-  "read": false
+  "customer_active_bidons": 2
 }
 ```
 
@@ -45,13 +45,15 @@ Bir yoxlamada max **1000** passiv müştəri (batch 100).
   "customer_id": "303",
   "last_order_date": "2026-06-28",
   "active_bidons": "2",
+  "inactivity_days": "20",
   "screen": "customers"
 }
 ```
 
 ## Frontend
 
-`type === "customer_inactive"` → müştəri detal (`customer_id`). Mesajda qalıq bidon göstərilir.
+- `type === "customer_inactive"` → müştəri detal
+- Frontend dəyişikliyi məcburi deyil (backend süzür)
 
 ## Deploy
 
@@ -59,6 +61,4 @@ Bir yoxlamada max **1000** passiv müştəri (batch 100).
 pm2 restart api-suman
 ```
 
-Bildirişlər səhifəsini bir dəfə açın — yalnız **bidonu qalan** passivlər gələcək.
-
-**Qeyd:** Əvvəl artıq bildiriş yazılmış `active_bidons = 0` müştərilər siyahıda qala bilər (tarixi qeyd). Yeni yoxlamada onlar yenidən əlavə olunmur.
+Bildirişlər səhifəsini bir dəfə açın.
