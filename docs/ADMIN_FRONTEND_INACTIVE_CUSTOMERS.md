@@ -1,46 +1,30 @@
-# Admin — Passiv müştərilər (tarix seçimi)
+# Admin — Problemli / passiv müştərilər (son 30 gün)
 
-Sabit 20/30 gün **yoxdur**. Tarixçə aylıq hesabat kimi admin **tarix aralığı** seçir; həmin tarixlərdə **sifariş verməyən** və **qalıq bidonu olan** (`active_bidons > 0`) müştərilər görünür.
+Əvvəlki məntiq:
 
-Avtomatik bildiriş (login / notifications) artıq yeni passiv yazmır — siyahı bu endpointlədir.
+1. **Son 30 gün** sifariş yoxdur  
+2. **`active_bidons > 0`** (qalıq bidon var)
+
+→ bildiriş + siyahı.
+
+**Sifariş yaradılsa** → dərhal problemli/passiv siyahıdan və bildirişlərdən çıxır.
 
 ---
 
-## API
+## Siyahı API
 
 ```http
 GET /api/customers/inactive
-Authorization: Bearer <admin_token>
+GET /api/customers/inactive?q=yuksel&page=1&limit=50
 ```
-
-### Filterlər (tarixçə ilə eyni ruh)
-
-| Parametr | Məna |
-|----------|------|
-| `startDate`, `endDate` | Özəl aralıq (`YYYY-MM-DD`) — `period=custom` |
-| `period` | `custom` \| `week` \| `days2` \| `month` (default: `month`) |
-| `days` | Son N gün (məs. `days=45`) — `period` əvəzinə |
-| `q` | Ad / telefon / ünvan axtarışı |
-| `page`, `limit` | Səhifələmə (default limit 50, max 100) |
-
-```http
-GET /api/customers/inactive?period=month
-GET /api/customers/inactive?period=week
-GET /api/customers/inactive?period=days2
-GET /api/customers/inactive?days=40
-GET /api/customers/inactive?startDate=2026-06-01&endDate=2026-07-31
-GET /api/customers/inactive?startDate=2026-07-01&endDate=2026-07-31&q=yuksel
-```
-
-### Cavab
 
 ```json
 {
-  "period": "custom",
-  "days": null,
-  "startDate": "2026-07-01",
-  "endDate": "2026-07-31",
-  "total": 42,
+  "period": "days",
+  "days": 30,
+  "startDate": "2026-07-07",
+  "endDate": "2026-08-06",
+  "total": 12,
   "page": 1,
   "limit": 50,
   "customers": [
@@ -49,45 +33,36 @@ GET /api/customers/inactive?startDate=2026-07-01&endDate=2026-07-31&q=yuksel
       "display_name": "Xelil",
       "phone": "050 973 64 88",
       "active_bidons": 2,
-      "debt": "6.00",
-      "deposit": 20,
-      "last_order_date": "2026-06-10",
-      "last_order_at": "2026-06-10T...",
-      "address": "..."
+      "last_order_date": "2026-06-28",
+      "debt": "6.00"
     }
   ]
 }
 ```
 
-### Məntiq
-
-Müştəri siyahıdadır əgər:
-
-1. `active_bidons > 0`
-2. Seçilmiş `[startDate, endDate]` aralığında **heç bir** sifariş yoxdur (`orders.created_at`, Asia/Baku)
-
-Yeni sifariş yaradılsa və tarix aralığına düşsə — növbəti sorğuda siyahıdan çıxır.
+Tarix seçimi **yoxdur** — həmişə son 30 gün.
 
 ---
 
-## UI tövsiyəsi
+## Bildirişlər
 
-Ayrı səhifə və ya «Passiv müştərilər» tab:
+- Admin login / `GET /api/notifications` → avtomatik yoxlanır
+- `type: customer_inactive`
+- Mesaj: `Xelil 1 aydır sifariş verməyib — qalıq 2 bidon (son: …)`
+- `customer_id` → detal
 
-```
-[ 2 gün ] [ Həftə ] [ Bu ay ]  [ 📅 — 📅 ]  [ N gün ]  [ axtarış ]
-```
-
-Cədvəl: Ad, Telefon, Qalıq bidon, Son sifariş, Borc → klik detal.
-
-Bildirişlər səhifəsində sabit 20 günlük avtomatik passiv **gözləməyin**.
+0 bidonlu və ya son 30 gündə sifarişi olanlar siyahıda/bildirişdə görünmür.
 
 ---
+
+## Frontend
+
+- Problemli müştərilər: `GET /api/customers/inactive` (tarix filteri lazım deyil)
+- Bildiriş: `customer_inactive` → müştəri detal
+- Sifariş yaradanda backend özü çıxarır — əlavə iş lazım deyil
 
 ## Deploy
 
 ```bash
 pm2 restart api-suman
 ```
-
-Migration lazım deyil. Frontend bu endpointə keçməlidir.

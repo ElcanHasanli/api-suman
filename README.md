@@ -140,7 +140,7 @@ Kuryer tamamladıqda admin paneldə də `completed` olur (eyni status).
 - `DELETE /api/devices/unregister` — `{ token }`
 - Kuryer: `GET /api/notifications`, `POST /api/notifications/device-token` (köhnə, eyni `platform`)
 - Kuryer təyin → push; kuryer tamamlayır/xərc/qeyd → admin push (`FIREBASE_SERVICE_ACCOUNT_JSON`)
-- Passiv müştərilər (tarix aralığı): `GET /api/customers/inactive` — `docs/ADMIN_FRONTEND_INACTIVE_CUSTOMERS.md`
+- Problemli/passiv müştərilər (son 30 gün + qalıq bidon): `GET /api/customers/inactive`; sifariş yarananda siyahıdan çıxır
 - Sənədlər: `docs/PUSH-ADMIN.md`, `docs/PUSH-KURYEER.md`
 
 ### Su doldurma anbarı

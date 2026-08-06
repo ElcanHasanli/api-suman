@@ -27,6 +27,14 @@ router.get('/', async (req, res) => {
            AND (
              (n.customer_id IS NOT NULL AND COALESCE(c.active_bidons, 0) <= 0)
              OR (n.customer_id IS NOT NULL AND c.id IS NULL)
+             OR (
+               n.customer_id IS NOT NULL
+               AND (
+                 SELECT (COALESCE(MAX(ord.created_at), c.created_at) AT TIME ZONE 'Asia/Baku')::date
+                 FROM orders ord
+                 WHERE ord.customer_id = c.id AND ord.company_id = $2
+               ) > ((NOW() AT TIME ZONE 'Asia/Baku')::date - 30)
+             )
            )
          )
        ORDER BY n.created_at DESC
