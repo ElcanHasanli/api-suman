@@ -1,59 +1,88 @@
-# Admin — Passiv müştəri bildirişi (20 gün + qalıq bidon)
+# Admin — Passiv müştərilər (tarix seçimi)
 
-Backend avtomatik yoxlayır. Bildiriş **yalnız** bu şərtlərlə:
+Sabit 20/30 gün **yoxdur**. Tarixçə aylıq hesabat kimi admin **tarix aralığı** seçir; həmin tarixlərdə **sifariş verməyən** və **qalıq bidonu olan** (`active_bidons > 0`) müştərilər görünür.
 
-1. **20+ gündür** sifariş yaradılmayıb (`orders.created_at`, yoxdursa `customers.created_at`)
-2. **`active_bidons > 0`** — qalıq bidon var
-
-Adminlərə: in-app `notifications` + FCM push (`customer_inactive`).
-
-### Siyahıdan çıxır
-
-| Hadisə | Nəticə |
-|--------|--------|
-| Yeni sifariş yaradılır | Həmin müştərinin passiv bildirişi + alert silinir |
-| Bidon 0 olur | Siyahıda görünmür / silinir |
-| Son sifarişdən 20 gün keçməyib | Siyahıda görünmür / silinir |
-
-20 gün yenidən sifariş olmasa — yenidən düşə bilər.
+Avtomatik bildiriş (login / notifications) artıq yeni passiv yazmır — siyahı bu endpointlədir.
 
 ---
 
-## Trigger
+## API
 
-- Admin login (fon)
-- `GET /api/notifications` — əvvəl yoxlama + köhnə passivləri təmizləmə, sonra siyahı
+```http
+GET /api/customers/inactive
+Authorization: Bearer <admin_token>
+```
+
+### Filterlər (tarixçə ilə eyni ruh)
+
+| Parametr | Məna |
+|----------|------|
+| `startDate`, `endDate` | Özəl aralıq (`YYYY-MM-DD`) — `period=custom` |
+| `period` | `custom` \| `week` \| `days2` \| `month` (default: `month`) |
+| `days` | Son N gün (məs. `days=45`) — `period` əvəzinə |
+| `q` | Ad / telefon / ünvan axtarışı |
+| `page`, `limit` | Səhifələmə (default limit 50, max 100) |
+
+```http
+GET /api/customers/inactive?period=month
+GET /api/customers/inactive?period=week
+GET /api/customers/inactive?period=days2
+GET /api/customers/inactive?days=40
+GET /api/customers/inactive?startDate=2026-06-01&endDate=2026-07-31
+GET /api/customers/inactive?startDate=2026-07-01&endDate=2026-07-31&q=yuksel
+```
+
+### Cavab
+
+```json
+{
+  "period": "custom",
+  "days": null,
+  "startDate": "2026-07-01",
+  "endDate": "2026-07-31",
+  "total": 42,
+  "page": 1,
+  "limit": 50,
+  "customers": [
+    {
+      "id": 303,
+      "display_name": "Xelil",
+      "phone": "050 973 64 88",
+      "active_bidons": 2,
+      "debt": "6.00",
+      "deposit": 20,
+      "last_order_date": "2026-06-10",
+      "last_order_at": "2026-06-10T...",
+      "address": "..."
+    }
+  ]
+}
+```
+
+### Məntiq
+
+Müştəri siyahıdadır əgər:
+
+1. `active_bidons > 0`
+2. Seçilmiş `[startDate, endDate]` aralığında **heç bir** sifariş yoxdur (`orders.created_at`, Asia/Baku)
+
+Yeni sifariş yaradılsa və tarix aralığına düşsə — növbəti sorğuda siyahıdan çıxır.
 
 ---
 
-## In-app
+## UI tövsiyəsi
 
-```json
-{
-  "type": "customer_inactive",
-  "message": "Xelil 20 gündür sifariş verməyib — qalıq 2 bidon (son: 2026-06-28)",
-  "customer_id": 303,
-  "customer_active_bidons": 2
-}
+Ayrı səhifə və ya «Passiv müştərilər» tab:
+
+```
+[ 2 gün ] [ Həftə ] [ Bu ay ]  [ 📅 — 📅 ]  [ N gün ]  [ axtarış ]
 ```
 
-## Push data
+Cədvəl: Ad, Telefon, Qalıq bidon, Son sifariş, Borc → klik detal.
 
-```json
-{
-  "type": "customer_inactive",
-  "customer_id": "303",
-  "last_order_date": "2026-06-28",
-  "active_bidons": "2",
-  "inactivity_days": "20",
-  "screen": "customers"
-}
-```
+Bildirişlər səhifəsində sabit 20 günlük avtomatik passiv **gözləməyin**.
 
-## Frontend
-
-- `type === "customer_inactive"` → müştəri detal
-- Frontend dəyişikliyi məcburi deyil (backend süzür)
+---
 
 ## Deploy
 
@@ -61,4 +90,4 @@ Adminlərə: in-app `notifications` + FCM push (`customer_inactive`).
 pm2 restart api-suman
 ```
 
-Bildirişlər səhifəsini bir dəfə açın.
+Migration lazım deyil. Frontend bu endpointə keçməlidir.

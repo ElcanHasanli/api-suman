@@ -12,6 +12,10 @@ import {
   fetchCompanyDepositTotal,
   customerNameSnapshot,
 } from '../utils/customerDeposit.js';
+import {
+  resolveInactiveDateRange,
+  listInactiveCustomers,
+} from '../utils/customerInactivity.js';
 
 const router = express.Router();
 
@@ -253,6 +257,38 @@ router.get('/deposit-totals', authorizeRole(['admin']), async (req, res) => {
     res.json(totals);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Passiv müştərilər — admin seçdiyi tarix aralığında sifariş verməyənlər (active_bidons > 0).
+ * Tarixçə aylıq kimi: period=week|days2|month|custom və ya days=N
+ */
+router.get('/inactive', authorizeRole(['admin']), async (req, res) => {
+  try {
+    const range = await resolveInactiveDateRange(req.query);
+    const { page, limit } = parsePaginationQuery(req.query);
+    const result = await listInactiveCustomers({
+      companyId: req.user.company_id,
+      startDate: range.startDate,
+      endDate: range.endDate,
+      page,
+      limit,
+      q: req.query.q || null,
+    });
+
+    res.json({
+      period: range.period,
+      days: range.days,
+      startDate: range.startDate,
+      endDate: range.endDate,
+      ...result,
+    });
+  } catch (err) {
+    res.status(err.status || 500).json({
+      error: err.message,
+      code: err.code ?? undefined,
+    });
   }
 });
 
