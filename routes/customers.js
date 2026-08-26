@@ -123,6 +123,7 @@ function mapCustomerRow(row) {
 
 const CUSTOMER_LIST_ORDER = `ORDER BY LOWER(TRIM(CONCAT(name, ' ', COALESCE(surname, '')))) ASC NULLS LAST, id ASC`;
 
+/** Köhnə ümumi axtarış (q) — bütün sahələr */
 function buildCustomerSearchClause(q, params) {
   const term = (q || '').trim();
   if (!term) {
@@ -144,6 +145,108 @@ function buildCustomerSearchClause(q, params) {
     )`,
     params,
   };
+}
+
+/**
+ * Müştərilər səhifəsi filterləri (AND).
+ * name | address | phone | price | price_min | price_max | q
+ */
+function buildCustomerListFilters(query, params) {
+  let clause = '';
+
+  const name = String(query.name ?? query.full_name ?? '').trim();
+  if (name) {
+    params.push(`%${name}%`);
+    const idx = params.length;
+    clause += ` AND (
+      name ILIKE $${idx}
+      OR surname ILIKE $${idx}
+      OR TRIM(CONCAT(name, ' ', COALESCE(surname, ''))) ILIKE $${idx}
+    )`;
+  }
+
+  const address = String(query.address ?? '').trim();
+  if (address) {
+    params.push(`%${address}%`);
+    clause += ` AND address ILIKE $${params.length}`;
+  }
+
+  const phoneRaw = String(query.phone ?? query.mobile ?? '').trim();
+  if (phoneRaw) {
+    const digits = phoneRaw.replace(/\D/g, '');
+    if (digits) {
+      params.push(`%${digits}%`);
+      const digitIdx = params.length;
+      params.push(`%${phoneRaw}%`);
+      const textIdx = params.length;
+      clause += ` AND (
+        regexp_replace(COALESCE(phone, ''), '\\D', '', 'g') LIKE $${digitIdx}
+        OR regexp_replace(COALESCE(phone2, ''), '\\D', '', 'g') LIKE $${digitIdx}
+        OR COALESCE(phone_normalized, '') LIKE $${digitIdx}
+        OR COALESCE(phone2_normalized, '') LIKE $${digitIdx}
+        OR phone ILIKE $${textIdx}
+        OR phone2 ILIKE $${textIdx}
+      )`;
+    }
+  }
+
+  if (query.price !== undefined && query.price !== null && query.price !== '') {
+    const price = Number(query.price);
+    if (Number.isFinite(price)) {
+      params.push(price);
+      clause += ` AND price = $${params.length}::numeric`;
+    }
+  }
+
+  if (query.price_min !== undefined && query.price_min !== null && query.price_min !== '') {
+    const min = Number(query.price_min);
+    if (Number.isFinite(min)) {
+      params.push(min);
+      clause += ` AND price >= $${params.length}::numeric`;
+    }
+  }
+
+  if (query.price_max !== undefined && query.price_max !== null && query.price_max !== '') {
+    const max = Number(query.price_max);
+    if (Number.isFinite(max)) {
+      params.push(max);
+      clause += ` AND price <= $${params.length}::numeric`;
+    }
+  }
+
+  const general = buildCustomerSearchClause(query.q, params);
+  clause += general.clause;
+
+  return { clause, params: general.params };
+}
+
+function appliedCustomerFilters(query) {
+  const filters = {};
+  if (String(query.name ?? query.full_name ?? '').trim()) {
+    filters.name = String(query.name ?? query.full_name).trim();
+  }
+  if (String(query.address ?? '').trim()) {
+    filters.address = String(query.address).trim();
+  }
+  if (String(query.phone ?? query.mobile ?? '').trim()) {
+    filters.phone = String(query.phone ?? query.mobile).trim();
+  }
+  if (query.price !== undefined && query.price !== null && query.price !== '') {
+    const n = Number(query.price);
+    if (Number.isFinite(n)) filters.price = n;
+  }
+  if (query.price_min !== undefined && query.price_min !== null && query.price_min !== '') {
+    const n = Number(query.price_min);
+    if (Number.isFinite(n)) filters.price_min = n;
+  }
+  if (query.price_max !== undefined && query.price_max !== null && query.price_max !== '') {
+    const n = Number(query.price_max);
+    if (Number.isFinite(n)) filters.price_max = n;
+  }
+  if (String(query.q ?? '').trim()) {
+    filters.q = String(query.q).trim();
+  }
+  return filters;
 }
 
 function parsePaginationQuery(query) {
@@ -201,9 +304,13 @@ router.get('/search', async (req, res) => {
 
 router.get('/export', authorizeRole(['admin']), async (req, res) => {
   try {
+    const params = [req.user.company_id];
+    const filters = buildCustomerListFilters(req.query, params);
     const result = await pool.query(
-      `SELECT * FROM customers WHERE company_id = $1 ${CUSTOMER_LIST_ORDER}`,
-      [req.user.company_id]
+      `SELECT * FROM customers
+       WHERE company_id = $1${filters.clause}
+       ${CUSTOMER_LIST_ORDER}`,
+      filters.params
     );
     const rows = result.rows.map((r) => ({
       ...r,
@@ -216,24 +323,42 @@ router.get('/export', authorizeRole(['admin']), async (req, res) => {
   }
 });
 
+/** Qiymət dropdown üçün unikal qiymətlər */
+router.get('/filter-options', authorizeRole(['admin']), async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT DISTINCT price::numeric AS price
+       FROM customers
+       WHERE company_id = $1
+       ORDER BY price ASC`,
+      [req.user.company_id]
+    );
+    res.json({
+      prices: result.rows.map((r) => Number(r.price)),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/', async (req, res) => {
   try {
     const companyId = req.user.company_id;
     const { page, limit, offset } = parsePaginationQuery(req.query);
     const params = [companyId];
-    const search = buildCustomerSearchClause(req.query.q, params);
+    const filters = buildCustomerListFilters(req.query, params);
 
     const countResult = await pool.query(
       `SELECT COUNT(*)::int AS total
        FROM customers
-       WHERE company_id = $1${search.clause}`,
-      search.params
+       WHERE company_id = $1${filters.clause}`,
+      filters.params
     );
 
-    const listParams = [...search.params, limit, offset];
+    const listParams = [...filters.params, limit, offset];
     const result = await pool.query(
       `SELECT * FROM customers
-       WHERE company_id = $1${search.clause}
+       WHERE company_id = $1${filters.clause}
        ${CUSTOMER_LIST_ORDER}
        LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
       listParams
@@ -244,6 +369,7 @@ router.get('/', async (req, res) => {
       total: countResult.rows[0].total,
       page,
       limit,
+      filters: appliedCustomerFilters(req.query),
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

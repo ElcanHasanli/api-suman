@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SUMAN — Su çatdırılması idarəetmə sistemi</title>
+  <style>
+    :root {
+      --bg: #0c1a24;
+      --surface: #132836;
+      --text: #f2f6f8;
+      --muted: #9db0bc;
+      --accent: #2a9d8f;
+      --accent-2: #e9c46a;
+      --line: #243947;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    }
+    .deck { height: 100%; position: relative; overflow: hidden; }
+    .slide {
+      display: none;
+      height: 100%;
+      padding: 6vh 8vw;
+      flex-direction: column;
+      justify-content: center;
+      gap: 1.4rem;
+      background:
+        radial-gradient(ellipse 80% 50% at 100% 0%, #1a3a4a 0%, transparent 55%),
+        var(--bg);
+    }
+    .slide.active { display: flex; }
+    .brand {
+      font-size: 0.85rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 600;
+    }
+    h1 {
+      font-size: clamp(2.2rem, 5vw, 3.6rem);
+      line-height: 1.1;
+      font-weight: 700;
+      max-width: 16ch;
+    }
+    h2 {
+      font-size: clamp(1.7rem, 3.5vw, 2.6rem);
+      line-height: 1.15;
+      font-weight: 700;
+    }
+    .lead {
+      font-size: clamp(1.1rem, 2vw, 1.35rem);
+      color: var(--muted);
+      max-width: 42rem;
+      line-height: 1.5;
+    }
+    ul {
+      list-style: none;
+      display: grid;
+      gap: 0.85rem;
+      max-width: 44rem;
+    }
+    li {
+      font-size: clamp(1.05rem, 1.8vw, 1.3rem);
+      line-height: 1.4;
+      padding-left: 1.4rem;
+      position: relative;
+      color: var(--text);
+    }
+    li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.55em;
+      width: 0.55rem;
+      height: 0.55rem;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin-top: 0.5rem;
+      max-width: 56rem;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1.25rem 1.35rem;
+    }
+    .card h3 {
+      font-size: 1.05rem;
+      margin-bottom: 0.45rem;
+      color: var(--accent-2);
+    }
+    .card p {
+      color: var(--muted);
+      font-size: 0.98rem;
+      line-height: 1.45;
+    }
+    .footer-bar {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.85rem 1.5rem;
+      background: rgba(12, 26, 36, 0.92);
+      border-top: 1px solid var(--line);
+      font-size: 0.85rem;
+      color: var(--muted);
+      z-index: 10;
+    }
+    .nav button {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--text);
+      padding: 0.4rem 0.85rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .nav button:hover { border-color: var(--accent); color: var(--accent); }
+    .nav { display: flex; gap: 0.5rem; align-items: center; }
+    .hint { opacity: 0.7; }
+    .tag {
+      display: inline-block;
+      border: 1px solid var(--accent);
+      color: var(--accent);
+      padding: 0.25rem 0.7rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      letter-spacing: 0.04em;
+    }
+    .cta {
+      margin-top: 0.5rem;
+      font-size: 1.15rem;
+      color: var(--accent-2);
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="deck" id="deck">
+
+    <section class="slide active">
+      <div class="brand">SUMAN · Khamsa Craft</div>
+      <h1>Su çatdırılmasını rəqəmsallaşdırın</h1>
+      <p class="lead">Damacana sifarişləri, kuryerlər, borclar, anbar və günlük hesabat — bir sistemdə, telefon və kompüterdən.</p>
+      <div class="tag">Şirkətlər üçün idarəetmə platforması</div>
+    </section>
+
+    <section class="slide">
+      <div class="brand">Problem</div>
+      <h2>Kağız, WhatsApp və yaddaşa güvənmək bahadır</h2>
+      <ul>
+        <li>Sifarişlər itir, kuryer kimə getdiyini qarışdırır</li>
+        <li>Borc və nişə «kim nə qədərdir» sualına çevrilir</li>
+        <li>Anbarda dolu/boş bidon sayı dəqiq bilinmir</li>
+        <li>Günün sonunda satış və xərc hesabı saatlar aparır</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <div class="brand">Həll</div>
+      <h2>SUMAN — sizin operativ mərkəziniz</h2>
+      <p class="lead">Admin ofisdən idarə edir, kuryer yolda tamamlayır, siz isə eyni anda satışı, borcu və anbarı görürsünüz.</p>
+      <div class="grid">
+        <div class="card"><h3>Admin panel</h3><p>Müştəri, sifariş, tarixçə, borclu, anbar, hesabat</p></div>
+        <div class="card"><h3>Kuryer panel</h3><p>Təyinat, çatdırılma, ödəniş, boş/dolu bidon, push</p></div>
+        <div class="card"><h3>Canlı izləmə</h3><p>Şirkət üzrə əməliyyatlar və günün icmalı</p></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="brand">Kim üçündür</div>
+      <h2>Damacana / su çatdıran şirkətlər</h2>
+      <ul>
+        <li>1 və ya bir neçə kuryeri olan komandalar</li>
+        <li>Nişə və borcla işləyən bizneslər</li>
+        <li>Anbar (dolu/boş bidon) izləmək istəyənlər</li>
+        <li>Gündəlik/aylıq hesabatı rəqəmlə görmək istəyənlər</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <div class="brand">1 · Müştərilər</div>
+      <h2>Bütün abunəçilər bir bazada</h2>
+      <ul>
+        <li>Ad, telefon, ünvan, qiymət, aktiv bidon</li>
+        <li>Depozit və müştəri qeydi — admin və kuryer görür</li>
+        <li>Borclu siyahısı və borc ödənişi</li>
+        <li>Keçmiş sifarişlər: neçə dolu verildi, neçə boş götürüldü</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <div class="brand">2 · Sifarişlər</div>
+      <h2>Yarat → təyin et → tamamla</h2>
+      <ul>
+        <li>Çatdırılma və boş bidon götürmə (pickup)</li>
+        <li>Nağd, kart, nişə, qismən ödəniş, əvvəlcədən ödəniş</li>
+        <li>Pompa, dispenser, cərimə kimi əlavələr</li>
+        <li>Kuryerə avtomatik bildiriş (push)</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <div class="brand">3 · Kuryer</div>
+      <h2>Yolda hər şey telefonunda</h2>
+      <ul>
+        <li>Aktiv sifarişlər, ünvan, telefon, WhatsApp</li>
+        <li>Tamamlama: ödəniş + dolu/boş bidon</li>
+        <li>Köhnə borcun birlikdə ödənilməsi</li>
+        <li>Anbar formu: girdi/çıxdı, götürülən dolu</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <div class="brand">4 · Anbar</div>
+      <h2>Dolu və boş bidon nəzarətdə</h2>
+      <ul>
+        <li>İki məkan: məs. Mikrorayon və Xırdalan</li>
+        <li>Kuryerin anbar hərəkəti qeydə düşür</li>
+        <li>Admin düzəliş və ümumi stok görünüşü</li>
+        <li>Müştərilərdə qalan aktiv bidon sayı</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <div class="brand">5 · Hesabat</div>
+      <h2>Günlük və aylıq rəqəmlər</h2>
+      <div class="grid">
+        <div class="card"><h3>Günlük</h3><p>Satış, borc, nişə, xərc, kuryer qalığı, satılan/götürülən bidon, depozit</p></div>
+        <div class="card"><h3>Aylıq / aralıq</h3><p>Satış, nişə, xərc, bidonlar, xalis gəlir (satış − xərc)</p></div>
+        <div class="card"><h3>Problemli müştəri</h3><p>30 gün sifariş verməyən + qalıq bidonu olanlar</p></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="brand">Nəticə</div>
+      <h2>Nə qazanırsınız</h2>
+      <ul>
+        <li>Daha az itən sifariş və qarışıqlıq</li>
+        <li>Borc və nişə şəffaf qalır</li>
+        <li>Anbar və bidon hərəkəti izlənilir</li>
+        <li>Günün sonunda hesabat hazır olur</li>
+        <li>Kuryer və ofis eyni məlumatla işləyir</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <div class="brand">Necə başlanır</div>
+      <h2>3 addım</h2>
+      <ul>
+        <li>Şirkətiniz üçün lisenziya açılır</li>
+        <li>Admin və kuryer hesabları yaradılır</li>
+        <li>Müştəriləri əlavə edib sifarişə başlayırsınız</li>
+      </ul>
+      <p class="lead">Admin: admin.suman.khamsacraft.az · Kuryer paneli ayrıca · API təhlükəsiz JWT ilə</p>
+    </section>
+
+    <section class="slide">
+      <div class="brand">SUMAN</div>
+      <h1>Gəlin birlikdə işə salaq</h1>
+      <p class="lead">Demo göstərək: sizin real prosesinizə uyğun — sifariş, kuryer, borc və hesabat.</p>
+      <p class="cta">Khamsa Craft · suman.khamsacraft.az / khamsacraft.az</p>
+    </section>
+
+  </div>
+
+  <div class="footer-bar">
+    <span id="counter">1 / 12</span>
+    <span class="hint">← → və ya klik · F tam ekran</span>
+    <div class="nav">
+      <button type="button" id="prev">Əvvəl</button>
+      <button type="button" id="next">Sonra</button>
+    </div>
+  </div>
+
+  <script>
+    const slides = [...document.querySelectorAll('.slide')];
+    let i = 0;
+    function show(n) {
+      i = Math.max(0, Math.min(slides.length - 1, n));
+      slides.forEach((s, idx) => s.classList.toggle('active', idx === i));
+      document.getElementById('counter').textContent = (i + 1) + ' / ' + slides.length;
+    }
+    document.getElementById('prev').onclick = () => show(i - 1);
+    document.getElementById('next').onclick = () => show(i + 1);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); show(i + 1); }
+      if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); show(i - 1); }
+      if (e.key === 'f' || e.key === 'F') {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+        else document.exitFullscreen?.();
+      }
+      if (e.key === 'Home') show(0);
+      if (e.key === 'End') show(slides.length - 1);
+    });
+    document.querySelector('.deck').addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      const mid = window.innerWidth / 2;
+      show(e.clientX > mid ? i + 1 : i - 1);
+    });
+  </script>
+</body>
+</html>

@@ -98,9 +98,10 @@ npm run db:seed
 - `GET /api/owner/companies/:id/warehouse` — anbarlar + son update-lər
 - Frontend: `docs/OWNER_FRONTEND_LIVE_MONITOR.md`
 ### Müştərilər (admin CRUD)
-- `GET /api/customers` — siyahı (`deposit`, `notes` daxil)
+- `GET /api/customers` — siyahı + filter: `name`, `address`, `phone`, `price` (`deposit`, `notes` daxil)
+- `GET /api/customers/filter-options` — qiymət dropdown (`prices[]`)
 - `GET /api/customers/search?q=` — sifariş yaradarkən axtarış: ad, telefon, **ünvan** (ünvan uyğunluqları əvvəl)
-- `GET /api/customers/export` — Excel
+- `GET /api/customers/export` — Excel (eyni filterlər)
 - `GET /api/customers/deposit-totals` — ümumi depozit cəmi
 - `POST /api/customers` — `{ name, surname?, phone, address, price?, active_bidons?, debt?, deposit?, notes? }`
 - `PUT /api/customers/:id` — depozit dəyişəndə `deposit_entries` ledger

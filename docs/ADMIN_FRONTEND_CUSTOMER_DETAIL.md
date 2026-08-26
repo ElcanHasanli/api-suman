@@ -11,6 +11,30 @@ Siyahıda hər sətirdə `display_name` var (Ad + Soyad).
 
 ---
 
+## 1b. Filterlər (YENİ)
+
+```http
+GET /api/customers?name=Azer&address=Masazir&phone=050&price=3&page=1&limit=20
+```
+
+| Parametr | Məna |
+|----------|------|
+| `name` | Ad / soyad / tam ad |
+| `address` | Ünvan |
+| `phone` | Mobil (phone / phone2) |
+| `price` | Dəqiq qiymət |
+| `price_min` / `price_max` | Qiymət aralığı (opsional) |
+| `q` | Köhnə ümumi axtarış |
+| `page` / `limit` | Səhifələmə |
+
+Filterlər **AND** ilə birləşir. Export: `GET /api/customers/export?...` eyni filterləri qəbul edir.
+
+Qiymət dropdown: `GET /api/customers/filter-options` → `{ "prices": [2.5, 3, 3.5] }`
+
+Cavabda `filters` obyekti tətbiq olunan dəyərləri qaytarır.
+
+---
+
 ## 2. Siyahı vs detal
 
 | Ekran | API | Məqsəd |
