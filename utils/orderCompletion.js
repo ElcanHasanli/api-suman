@@ -2,6 +2,7 @@ import pool from '../config/database.js';
 import { isPickupOrder } from './orderTypes.js';
 import { deriveUnitPrice } from './orderExtras.js';
 import { settleUnpaidOrdersFromDebtPayment } from './customerDebt.js';
+import { snapshotCustomerBidonsAfter } from './orderBidons.js';
 
 /** Sifariş qiyməti ilə ödənilən arasındakı fərq — müştəri borcuna əlavə olunur. */
 export function unpaidOrderAmount(orderPrice, amountPaid) {
@@ -320,6 +321,8 @@ async function completePickupOrderInternal(client, order, { empty_bidons_returne
     );
   }
 
+  await snapshotCustomerBidonsAfter(client, order.id, order.customer_id);
+
   return updatedOrder.rows[0];
 }
 
@@ -431,6 +434,12 @@ export async function completeOrder(orderId, {
         split.isOrderPaid,
         orderId,
       ]
+    );
+
+    await snapshotCustomerBidonsAfter(
+      client,
+      orderId,
+      order.customer_id
     );
 
     await client.query('COMMIT');
@@ -575,6 +584,8 @@ export async function updateCompletedOrder(orderId, courierId, {
         orderId,
       ]
     );
+
+    await snapshotCustomerBidonsAfter(client, orderId, order.customer_id);
 
     await client.query('COMMIT');
     return updatedOrder.rows[0];

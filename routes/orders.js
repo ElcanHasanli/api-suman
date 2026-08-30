@@ -47,6 +47,7 @@ import {
   ORDER_CUSTOMER_JOIN_SELECT,
   customerSnapshotFromRow,
 } from '../utils/orderCustomerSnapshot.js';
+import { buildOrderBidonFields } from '../utils/orderBidons.js';
 
 const router = express.Router();
 
@@ -121,6 +122,7 @@ function enrichOrderRow(order, user = null) {
       order.status !== 'completed' && customerDebt != null
         ? orderDue + customerDebt
         : undefined,
+    ...buildOrderBidonFields(order),
   };
   return user?.role === 'courier' ? enrichOrderForUser(row, user) : row;
 }
@@ -511,16 +513,18 @@ router.post('/', authorizeRole(['admin']), async (req, res) => {
     }
 
     const customerSnap = customerSnapshotFromRow(customerData);
+    const activeBidonsBefore = Number(customerData.active_bidons ?? 0);
     const result = await client.query(
       `INSERT INTO orders (
          company_id, customer_id, courier_id, bidons_count, address, price, unit_price,
          status, notes, full_bidons_given, assigned_at, order_type, scheduled_date,
          is_prepaid, prepaid_amount, amount_paid, is_paid, paid_at,
          customer_name_snapshot, customer_surname_snapshot,
-         customer_phone_snapshot, customer_phone2_snapshot
+         customer_phone_snapshot, customer_phone2_snapshot,
+         customer_active_bidons_before
        )
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::date, $14, $15, $16, $17, $18,
-               $19, $20, $21, $22)
+               $19, $20, $21, $22, $23)
        RETURNING *`,
       [
         req.user.company_id,
@@ -545,6 +549,7 @@ router.post('/', authorizeRole(['admin']), async (req, res) => {
         customerSnap.customer_surname_snapshot,
         customerSnap.customer_phone_snapshot,
         customerSnap.customer_phone2_snapshot,
+        activeBidonsBefore,
       ]
     );
 

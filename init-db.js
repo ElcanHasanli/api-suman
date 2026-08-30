@@ -56,6 +56,8 @@ async function initDatabase() {
         customer_surname_snapshot VARCHAR(255),
         customer_phone_snapshot VARCHAR(50),
         customer_phone2_snapshot VARCHAR(50),
+        customer_active_bidons_before INT,
+        customer_active_bidons_after INT,
         courier_id INT REFERENCES users(id) ON DELETE SET NULL,
         assigned_at TIMESTAMPTZ,
         bidons_count INT DEFAULT 1,

@@ -29,6 +29,7 @@
     "db:migrate:history-dashboard": "node scripts/db-migrate-history-dashboard.js",
     "db:migrate:customer-deposit": "node scripts/db-migrate-customer-deposit.js",
     "db:migrate:customer-delete-set-null": "node scripts/db-migrate-customer-delete-set-null.js",
+    "db:migrate:order-bidon-snapshots": "node scripts/db-migrate-order-bidon-snapshots.js",
     "db:repair:settle-paid-debt": "node scripts/db-repair-settle-paid-debt.js",
     "import:whatsapp": "node scripts/import-whatsapp-customers.js",
     "db:purge-customers-only": "node scripts/db-purge-except-customers.js",

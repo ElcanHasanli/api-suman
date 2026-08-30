@@ -61,6 +61,49 @@ GET /api/orders?completedToday=true&courier_id=3
 3. Seçim dəyişəndə: `getOrders({ status, courier_id, completedToday })`
 4. URL sync (istəyə görə): `?status=assigned&courier_id=3`
 
+## Bidon məlumatları (sifariş siyahısı / detal)
+
+`GET /api/orders` və `GET /api/orders/:id` cavabında hər sifarişdə:
+
+| Sahə | Məna |
+|------|------|
+| `bidons_count` | Sifariş edilən bidon sayı |
+| `full_bidons_given` | Verilən dolu bidon (tamamlanmamışda planlaşdırılan say) |
+| `empty_bidons_returned` | Müştəridən götürülən boş bidon (tamamlananda kuryer qeyd edir; aktiv sifarişdə `null`) |
+| `customer_active_bidons_before` | Sifariş yaradılanda müştəridə olan boş bidon |
+| `customer_empty_bidons_during` | Təyin olunub / icra olunur — tamamlanana qədər müştəridə boş bidon (`customer_active_bidons_before` ilə eyni) |
+| `customer_active_bidons_after` | Tamamlandıqdan sonra müştəridə qalan boş bidon (`completed` statusunda) |
+
+### UI tövsiyəsi — sütunlar
+
+| Sütun | Göstəriş |
+|--------|----------|
+| Sifariş | `bidons_count` dolu |
+| Götürülən boş | `empty_bidons_returned` (tamamlanmayıbsa `—`) |
+| Müştəridə boş (icra) | `customer_empty_bidons_during` — yalnız `assigned` / `in_progress` |
+| Müştəridə boş (sonra) | `customer_active_bidons_after` — yalnız `completed` |
+
+Nümunə: `2 dolu · 1 boş götürüldü · qalıq: 3`  
+`order_type === "pickup"` → yalnız boş götürmə (`full_bidons_given` = 0).
+
+**Qeyd:** Köhnə sifarişlərdə `customer_active_bidons_before/after` boş ola bilər; bu halda `customer_empty_bidons_during` müştərinin cari `active_bidons` dəyərinə fallback edir.
+
+```typescript
+// Sifariş sətirində bidon xülasəsi
+function formatOrderBidons(o: Order) {
+  const parts = [`${o.bidons_count} dolu`];
+  if (o.empty_bidons_returned != null) {
+    parts.push(`${o.empty_bidons_returned} boş götürüldü`);
+  }
+  if (o.customer_empty_bidons_during != null) {
+    parts.push(`müştəridə ${o.customer_empty_bidons_during} boş`);
+  } else if (o.customer_active_bidons_after != null) {
+    parts.push(`sonra ${o.customer_active_bidons_after} boş qaldı`);
+  }
+  return parts.join(' · ');
+}
+```
+
 ```typescript
 // lib/api.ts
 export async function getOrders(params?: {
