@@ -43,6 +43,10 @@ import { applyCustomerDebtUpdate } from '../utils/customerDebt.js';
 import { whatsAppUrl } from '../utils/phone.js';
 import { formatCustomerDisplay } from '../utils/customerName.js';
 import { clearCustomerInactiveState } from '../utils/customerInactivity.js';
+import {
+  ORDER_CUSTOMER_JOIN_SELECT,
+  customerSnapshotFromRow,
+} from '../utils/orderCustomerSnapshot.js';
 
 const router = express.Router();
 
@@ -50,9 +54,7 @@ router.use(authenticateToken, requireTenant);
 
 const orderListSelect = `
   SELECT o.*,
-         c.name, c.surname, c.phone AS customer_phone, c.phone2 AS customer_phone2,
-         c.address AS customer_address, c.active_bidons, c.debt,
-         c.deposit AS customer_deposit, c.notes AS customer_notes,
+         ${ORDER_CUSTOMER_JOIN_SELECT},
          u.name AS courier_name
   FROM orders o
   LEFT JOIN customers c ON o.customer_id = c.id
@@ -508,13 +510,17 @@ router.post('/', authorizeRole(['admin']), async (req, res) => {
       });
     }
 
+    const customerSnap = customerSnapshotFromRow(customerData);
     const result = await client.query(
       `INSERT INTO orders (
          company_id, customer_id, courier_id, bidons_count, address, price, unit_price,
          status, notes, full_bidons_given, assigned_at, order_type, scheduled_date,
-         is_prepaid, prepaid_amount, amount_paid, is_paid, paid_at
+         is_prepaid, prepaid_amount, amount_paid, is_paid, paid_at,
+         customer_name_snapshot, customer_surname_snapshot,
+         customer_phone_snapshot, customer_phone2_snapshot
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::date, $14, $15, $16, $17, $18)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::date, $14, $15, $16, $17, $18,
+               $19, $20, $21, $22)
        RETURNING *`,
       [
         req.user.company_id,
@@ -535,6 +541,10 @@ router.post('/', authorizeRole(['admin']), async (req, res) => {
         prepaid ? prepaidValue : null,
         isPaid,
         isPaid ? new Date() : null,
+        customerSnap.customer_name_snapshot,
+        customerSnap.customer_surname_snapshot,
+        customerSnap.customer_phone_snapshot,
+        customerSnap.customer_phone2_snapshot,
       ]
     );
 

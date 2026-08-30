@@ -14,7 +14,12 @@ import {
 } from '../utils/customerDeposit.js';
 import {
   listInactiveCustomers,
+  clearCustomerInactiveState,
 } from '../utils/customerInactivity.js';
+import {
+  snapshotCustomerOnOrders,
+  snapshotCustomerOnDebtPayments,
+} from '../utils/orderCustomerSnapshot.js';
 
 const router = express.Router();
 
@@ -792,6 +797,20 @@ router.delete('/:id', authorizeRole(['admin']), async (req, res) => {
         notes: 'Müştəri silindi — depozit ümumi cəmdən çıxarıldı',
       });
     }
+
+    await snapshotCustomerOnOrders(
+      client,
+      req.user.company_id,
+      customer.id,
+      customer
+    );
+    await snapshotCustomerOnDebtPayments(
+      client,
+      req.user.company_id,
+      customer.id,
+      customer
+    );
+    await clearCustomerInactiveState(req.user.company_id, customer.id);
 
     const result = await client.query(
       'DELETE FROM customers WHERE id = $1 AND company_id = $2 RETURNING *',

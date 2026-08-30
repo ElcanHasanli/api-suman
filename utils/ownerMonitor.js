@@ -12,6 +12,9 @@ import {
   fetchCompanyDepositTotal,
   mapDepositEntry,
 } from './customerDeposit.js';
+import {
+  ORDER_CUSTOMER_JOIN_SELECT,
+} from './orderCustomerSnapshot.js';
 
 function roundMoney(value) {
   return Number(Number(value).toFixed(2));
@@ -65,9 +68,10 @@ async function fetchExpenses(period, startDate, endDate, companyId) {
 async function fetchDebtPayments(period, startDate, endDate, companyId) {
   let query = `
     SELECT dp.*, c.name AS customer_name, c.surname AS customer_surname,
+           dp.customer_name_snapshot,
            u.name AS recorded_by_name, u.role AS recorded_by_role
     FROM debt_payments dp
-    JOIN customers c ON dp.customer_id = c.id
+    LEFT JOIN customers c ON dp.customer_id = c.id
     JOIN users u ON dp.recorded_by = u.id
     WHERE dp.company_id = $1`;
   const params = [companyId];
@@ -129,7 +133,7 @@ export async function getCompanyMonitor(companyId, {
       fetchCompanyDepositTotal(companyId),
       pool.query(
         `SELECT o.*,
-                c.name, c.surname, c.phone AS customer_phone, c.debt AS customer_debt,
+                ${ORDER_CUSTOMER_JOIN_SELECT},
                 u.name AS courier_name
          FROM orders o
          LEFT JOIN customers c ON o.customer_id = c.id
@@ -298,7 +302,8 @@ export async function getLiveFeed({
          SELECT o.id, o.company_id, co.name AS company_name, o.status, o.price,
                 o.payment_type, o.amount_paid, o.is_paid, o.created_at, o.updated_at,
                 o.completed_at, o.courier_id,
-                c.name AS customer_name, c.surname AS customer_surname,
+                COALESCE(c.name, o.customer_name_snapshot) AS customer_name,
+                COALESCE(c.surname, o.customer_surname_snapshot) AS customer_surname,
                 u.name AS courier_name,
                 GREATEST(o.updated_at, COALESCE(o.completed_at, o.created_at)) AS event_at
          FROM orders o
@@ -333,7 +338,8 @@ export async function getLiveFeed({
       `SELECT * FROM (
          SELECT dp.id, dp.company_id, co.name AS company_name, dp.amount,
                 dp.order_id, dp.created_at AS event_at,
-                c.name AS customer_name, c.surname AS customer_surname,
+                COALESCE(c.name, o.customer_name_snapshot) AS customer_name,
+                COALESCE(c.surname, o.customer_surname_snapshot) AS customer_surname,
                 u.name AS actor_name, u.role AS actor_role
          FROM debt_payments dp
          JOIN companies co ON co.id = dp.company_id
@@ -478,7 +484,7 @@ export async function getCompanyOrders(companyId, { status = null, limit = 100 }
   const params = [companyId];
   let query = `
     SELECT o.*,
-           c.name, c.surname, c.phone AS customer_phone, c.debt AS customer_debt,
+           ${ORDER_CUSTOMER_JOIN_SELECT},
            u.name AS courier_name
     FROM orders o
     LEFT JOIN customers c ON o.customer_id = c.id

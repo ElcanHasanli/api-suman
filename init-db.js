@@ -51,7 +51,11 @@ async function initDatabase() {
       CREATE TABLE IF NOT EXISTS orders (
         id SERIAL PRIMARY KEY,
         company_id INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-        customer_id INT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+        customer_id INT REFERENCES customers(id) ON DELETE SET NULL,
+        customer_name_snapshot VARCHAR(255),
+        customer_surname_snapshot VARCHAR(255),
+        customer_phone_snapshot VARCHAR(50),
+        customer_phone2_snapshot VARCHAR(50),
         courier_id INT REFERENCES users(id) ON DELETE SET NULL,
         assigned_at TIMESTAMPTZ,
         bidons_count INT DEFAULT 1,

@@ -105,7 +105,7 @@ npm run db:seed
 - `GET /api/customers/deposit-totals` — ümumi depozit cəmi
 - `POST /api/customers` — `{ name, surname?, phone, address, price?, active_bidons?, debt?, deposit?, notes? }`
 - `PUT /api/customers/:id` — depozit dəyişəndə `deposit_entries` ledger
-- `DELETE /api/customers/:id` — depozit ümumi cəmdən çıxır (ledger `delete`)
+- `DELETE /api/customers/:id` — müştəri silinir; sifarişlər qalır (`customer_id` null, ad/telefon snapshot-da); depozit ümumi cəmdən çıxır (ledger `delete`)
 - Frontend: `docs/ADMIN_FRONTEND_CUSTOMER_DEPOSIT.md`
 
 ### Sifarişlər

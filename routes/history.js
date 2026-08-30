@@ -172,9 +172,10 @@ async function fetchExpenses(
 async function fetchDebtPayments(period, startDate, endDate, companyId) {
   let query = `
     SELECT dp.*, c.name AS customer_name, c.surname AS customer_surname,
+           dp.customer_name_snapshot,
            u.name AS recorded_by_name, u.role AS recorded_by_role
     FROM debt_payments dp
-    JOIN customers c ON dp.customer_id = c.id
+    LEFT JOIN customers c ON dp.customer_id = c.id
     JOIN users u ON dp.recorded_by = u.id
     WHERE dp.company_id = $1`;
   const params = [companyId];

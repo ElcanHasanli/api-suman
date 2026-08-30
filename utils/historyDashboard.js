@@ -192,7 +192,7 @@ export function buildDebtGivenBox(debtPayments, orders, courierId = null) {
     customer: formatCustomerDisplay({
       name: dp.customer_name,
       surname: dp.customer_surname,
-    }),
+    }) || dp.customer_name_snapshot || '—',
     amount: roundMoney(dp.amount),
     order_id: dp.order_id,
     recorded_by_name: dp.recorded_by_name,

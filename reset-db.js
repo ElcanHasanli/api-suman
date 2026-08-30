@@ -110,7 +110,11 @@ async function createSchema(client) {
     CREATE TABLE orders (
       id SERIAL PRIMARY KEY,
       company_id INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-      customer_id INT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
+      customer_id INT REFERENCES customers(id) ON DELETE SET NULL,
+      customer_name_snapshot VARCHAR(255),
+      customer_surname_snapshot VARCHAR(255),
+      customer_phone_snapshot VARCHAR(50),
+      customer_phone2_snapshot VARCHAR(50),
       courier_id INT REFERENCES users(id) ON DELETE SET NULL,
       assigned_at TIMESTAMPTZ,
       scheduled_date DATE NOT NULL DEFAULT (NOW() AT TIME ZONE 'Asia/Baku')::date,
@@ -160,7 +164,8 @@ async function createSchema(client) {
     CREATE TABLE debt_payments (
       id SERIAL PRIMARY KEY,
       company_id INT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-      customer_id INT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      customer_id INT REFERENCES customers(id) ON DELETE SET NULL,
+      customer_name_snapshot VARCHAR(255),
       order_id INT REFERENCES orders(id) ON DELETE SET NULL,
       amount DECIMAL(10, 2) NOT NULL,
       previous_debt DECIMAL(10, 2) NOT NULL,
