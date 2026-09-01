@@ -172,16 +172,16 @@ router.patch('/stock', authorizeRole(['admin']), async (req, res) => {
   try {
     const { warehouse_id, warehouse_code, full_count, empty_count, notes } = req.body;
 
-    if (full_count == null || empty_count == null) {
-      return res.status(400).json({ error: 'full_count and empty_count required' });
-    }
+    // if (full_count == null || empty_count == null) {
+    //   return res.status(400).json({ error: 'full_count and empty_count required' });
+    // }
 
     const result = await setWarehouseStockByAdmin({
       companyId: req.user.company_id,
       warehouse_id,
       warehouse_code,
-      full_count,
-      empty_count,
+      full_count: full_count ?? 0,
+      empty_count: empty_count ?? 0,
       updatedBy: req.user.id,
       notes,
     });

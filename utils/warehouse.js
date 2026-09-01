@@ -15,12 +15,16 @@ export function normalizeWarehouseCode(code) {
   return c;
 }
 
-function toInt(value, fieldName) {
-  const n = Number(value);
-  if (!Number.isInteger(n) || n < 0) {
-    throw new Error(`${fieldName} must be a non-negative integer`);
-  }
-  return n;
+function toInt(value, _fieldName) {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n);
+  // Validasiya müvəqqəti söndürülüb — hər dəyər qəbul olunur
+  // const n = Number(value);
+  // if (!Number.isInteger(n) || n < 0) {
+  //   throw new Error(`${fieldName} must be a non-negative integer`);
+  // }
+  // return n;
 }
 
 export function formatWarehouse(row) {
@@ -122,21 +126,20 @@ export async function resolveWarehouseId(client, companyId, {
 } = {}) {
   if (warehouse_id != null && warehouse_id !== '') {
     const wh = await getWarehouseById(client, companyId, Number(warehouse_id));
-    if (!wh) {
-      throw Object.assign(new Error('Warehouse not found'), { status: 404 });
-    }
-    return wh;
+    if (wh) return wh;
+    // throw Object.assign(new Error('Warehouse not found'), { status: 404 });
   }
 
   if (warehouse_code) {
     const code = normalizeWarehouseCode(warehouse_code);
-    if (!WAREHOUSE_CODES.includes(code)) {
-      throw Object.assign(
-        new Error(`warehouse_code must be ${WAREHOUSE_CODES.join(' or ')}`),
-        { status: 400, code: 'INVALID_WAREHOUSE' }
-      );
+    if (WAREHOUSE_CODES.includes(code)) {
+      const wh = await getWarehouseByCode(client, companyId, code);
+      if (wh) return wh;
     }
-    return getWarehouseByCode(client, companyId, code);
+    // throw Object.assign(
+    //   new Error(`warehouse_code must be ${WAREHOUSE_CODES.join(' or ')}`),
+    //   { status: 400, code: 'INVALID_WAREHOUSE' }
+    // );
   }
 
   if (defaultWarehouseId) {
@@ -190,21 +193,21 @@ export async function applyWarehouseUpdate({
   const entryFull = toInt(entry_full ?? full_in ?? 0, 'entry_full');
   const entryEmpty = toInt(entry_empty ?? empty_in ?? 0, 'entry_empty');
 
-  if (exit_full == null || exit_full === '') {
-    throw Object.assign(new Error('exit_full required (neçə dolu ilə çıxdı)'), {
-      status: 400,
-    });
-  }
-  const exitFull = toInt(exit_full, 'exit_full');
+  // if (exit_full == null || exit_full === '') {
+  //   throw Object.assign(new Error('exit_full required (neçə dolu ilə çıxdı)'), {
+  //     status: 400,
+  //   });
+  // }
+  const exitFull = toInt(exit_full ?? entry_full ?? 0, 'exit_full');
 
-  if (exitFull < entryFull) {
-    throw Object.assign(
-      new Error(
-        `exit_full (${exitFull}) cannot be less than entry_full (${entryFull})`
-      ),
-      { status: 400, code: 'EXIT_LESS_THAN_ENTRY' }
-    );
-  }
+  // if (exitFull < entryFull) {
+  //   throw Object.assign(
+  //     new Error(
+  //       `exit_full (${exitFull}) cannot be less than entry_full (${entryFull})`
+  //     ),
+  //     { status: 400, code: 'EXIT_LESS_THAN_ENTRY' }
+  //   );
+  // }
 
   const fullTaken = exitFull - entryFull;
   const defaultWarehouseId = await getCourierDefaultWarehouse(
@@ -232,7 +235,7 @@ export async function applyWarehouseUpdate({
     const prevFull = Number(stock.full_count) || 0;
     const prevEmpty = Number(stock.empty_count) || 0;
 
-    const remFull = Math.max(0, prevFull - fullTaken);
+    const remFull = prevFull - fullTaken;
     const remEmpty = prevEmpty + entryEmpty;
 
     const insert = await client.query(

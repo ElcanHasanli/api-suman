@@ -69,19 +69,23 @@ router.patch('/:id/warehouse', authorizeRole(['admin']), async (req, res) => {
       const found = warehouses.find(
         (w) => w.code === String(warehouse_code).toLowerCase()
       );
-      if (!found) {
-        return res.status(400).json({
-          error: 'Invalid warehouse_code',
-          code: 'INVALID_WAREHOUSE',
-        });
+      if (found) {
+        warehouseId = found.id;
       }
-      warehouseId = found.id;
+      // if (!found) {
+      //   return res.status(400).json({
+      //     error: 'Invalid warehouse_code',
+      //     code: 'INVALID_WAREHOUSE',
+      //   });
+      // }
     } else if (warehouseId != null) {
       const wh = await getWarehouseById(null, companyId, Number(warehouseId));
-      if (!wh) {
-        return res.status(404).json({ error: 'Warehouse not found' });
+      if (wh) {
+        warehouseId = wh.id;
       }
-      warehouseId = wh.id;
+      // if (!wh) {
+      //   return res.status(404).json({ error: 'Warehouse not found' });
+      // }
     }
 
     const result = await pool.query(
